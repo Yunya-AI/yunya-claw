@@ -1,0 +1,16 @@
+{
+  "toolSingleArgField": {
+    "tool_call": {
+      "__default__": "content",
+      "exec": "command",
+      "write": "path",
+      "read": "file_path",
+      "edit": "file_path",
+      "process": "action",
+      "browser": "url"
+    },
+    "tool_result": {
+      "__default__": "content"
+    }
+  }
+}

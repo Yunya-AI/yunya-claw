@@ -1,0 +1,117 @@
+{
+  "name": "yunya-claw",
+  "version": "0.1.0",
+  "description": "OpenClaw 桌面应用 - 基于 Electron 封装的个人 AI 助手",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "predev": "node scripts/bundle-plugins.mjs",
+    "build": "vite build",
+    "kill-release-lock": "node scripts/kill-release-lock.mjs",
+    "build:win": "node scripts/kill-release-lock.mjs && node scripts/ensure-node-win.mjs && node scripts/build-openclaw-release.mjs && vite build && node scripts/electron-builder-win.mjs",
+    "build:win-mini": "node scripts/kill-release-lock.mjs && node scripts/ensure-node-win.mjs && node scripts/build-openclaw-release-mini.mjs && vite build && node scripts/electron-builder-win.mjs",
+    "preview": "vite preview",
+    "prebuild": "node scripts/bundle-plugins.mjs"
+  },
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/yunya-claw.git"
+  },
+  "homepage": "https://github.com/your-username/yunya-claw#readme",
+  "bugs": {
+    "url": "https://github.com/your-username/yunya-claw/issues"
+  },
+  "keywords": [
+    "openclaw",
+    "electron",
+    "ai-assistant",
+    "desktop-app",
+    "yunya-claw"
+  ],
+  "build": {
+    "files": ["**/*", "!openclaw", "!release", "!release-*", "!.claude", "!.git", "!.playwright-mcp"],
+    "appId": "ai.yunya.claw",
+    "productName": "YunyaClaw",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "public/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerLanguages": ["zh_CN", "en_US"],
+      "include": "build/installer.nsh",
+      "warningsAsErrors": false
+    },
+    "extraFiles": [
+      {
+        "from": "build/openclaw.cmd",
+        "to": "openclaw.cmd"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "resources/bundled-plugins",
+        "to": "bundled-plugins",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "resources/bundled-skills",
+        "to": "bundled-skills",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "resources/openclaw-release/node_modules",
+        "to": "openclaw/node_modules",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "resources/node-win",
+        "to": "node-win",
+        "filter": ["**/*"]
+      }
+    ]
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild",
+      "electron-winstaller"
+    ]
+  },
+  "devDependencies": {
+    "@dingtalk-real-ai/dingtalk-connector": "^0.7.1",
+    "@sliverp/qqbot": "^1.5.3",
+    "@tailwindcss/vite": "^4.2.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^5.1.4",
+    "electron": "^40.7.0",
+    "electron-builder": "^26.8.1",
+    "tailwindcss": "^4.2.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.577.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^3.5.0",
+    "ws": "^8.19.0"
+  }
+}

@@ -1,0 +1,136 @@
+import { contextBridge, ipcRenderer } from 'electron'
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  gateway: {
+    start: () => ipcRenderer.invoke('gateway:start'),
+    stop: () => ipcRenderer.invoke('gateway:stop'),
+    status: () => ipcRenderer.invoke('gateway:status'),
+    token: () => ipcRenderer.invoke('gateway:token'),
+    onLog: (callback: (msg: string) => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, msg: string) => callback(msg)
+      ipcRenderer.on('gateway:log', wrapped)
+      return () => ipcRenderer.removeListener('gateway:log', wrapped)
+    },
+    onError: (callback: (msg: string) => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, msg: string) => callback(msg)
+      ipcRenderer.on('gateway:error', wrapped)
+      return () => ipcRenderer.removeListener('gateway:error', wrapped)
+    },
+    onStatus: (callback: (status: { running: boolean; code?: number }) => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, status: { running: boolean; code?: number }) => callback(status)
+      ipcRenderer.on('gateway:status', wrapped)
+      return () => ipcRenderer.removeListener('gateway:status', wrapped)
+    },
+  },
+  window: {
+    minimize: () => ipcRenderer.invoke('window:minimize'),
+    maximize: () => ipcRenderer.invoke('window:maximize'),
+    close: () => ipcRenderer.invoke('window:close'),
+  },
+  /** yunyaClaw.json 统一配置服务，所有子字段修改均通过此 API 避免冲突 */
+  yunyaClaw: {
+    read: () => ipcRenderer.invoke('yunyaClaw:read'),
+    get: (key: string) => ipcRenderer.invoke('yunyaClaw:get', key),
+    update: (partial: Record<string, unknown>) => ipcRenderer.invoke('yunyaClaw:update', partial),
+  },
+  /** 应用外观：名称、图标 */
+  appearance: {
+    get: () => ipcRenderer.invoke('appearance:get'),
+    getIconDataUrl: () => ipcRenderer.invoke('appearance:getIconDataUrl'),
+    setAppName: (appName: string) => ipcRenderer.invoke('appearance:setAppName', appName),
+    setIcon: (base64: string) => ipcRenderer.invoke('appearance:setIcon', base64),
+    clearIcon: () => ipcRenderer.invoke('appearance:clearIcon'),
+  },
+  prefs: {
+    getHiddenSessions: () => ipcRenderer.invoke('prefs:getHiddenSessions'),
+    setHiddenSessions: (data: Record<string, string[]>) => ipcRenderer.invoke('prefs:setHiddenSessions', data),
+  },
+  config: {
+    read: () => ipcRenderer.invoke('config:read'),
+    write: (config: Record<string, unknown>) => ipcRenderer.invoke('config:write', config),
+    saveProviders: (providers: unknown[], selectedModel?: { providerKey: string; modelId: string }) =>
+      ipcRenderer.invoke('config:saveProviders', providers, selectedModel),
+    saveAgentModel: (agentId: string, model: string) => ipcRenderer.invoke('config:saveAgentModel', agentId, model),
+    saveAgentIdentity: (agentId: string, identity: { name?: string; emoji?: string; avatar?: string }) =>
+      ipcRenderer.invoke('config:saveAgentIdentity', agentId, identity),
+  },
+  chat: {
+    listSessions: () => ipcRenderer.invoke('chat:listSessions'),
+    loadSession: (sessionId: string) => ipcRenderer.invoke('chat:loadSession', sessionId),
+    saveSession: (session: unknown) => ipcRenderer.invoke('chat:saveSession', session),
+    deleteSession: (sessionId: string) => ipcRenderer.invoke('chat:deleteSession', sessionId),
+    loadOpenClawTranscript: (sessionId: string) => ipcRenderer.invoke('chat:loadOpenClawTranscript', sessionId),
+    resetSession: (agentId: string, reason?: 'new' | 'reset') => ipcRenderer.invoke('chat:resetSession', agentId, reason),
+    abort: (sessionKey: string, runId?: string) => ipcRenderer.invoke('chat:abort', sessionKey, runId),
+    listGatewaySessions: (agentId: string) => ipcRenderer.invoke('chat:listGatewaySessions', agentId),
+    patchGatewaySession: (sessionKey: string, label: string) => ipcRenderer.invoke('chat:patchGatewaySession', sessionKey, label),
+    resetGatewaySession: (sessionKey: string, reason?: 'new' | 'reset') => ipcRenderer.invoke('chat:resetGatewaySession', sessionKey, reason),
+  },
+  media: {
+    readFile: (mediaUrl: string) => ipcRenderer.invoke('media:readFile', mediaUrl),
+  },
+  util: {
+    openExternal: (url: string) => ipcRenderer.invoke('util:openExternal', url),
+    saveImage: (imageUrl: string, suggestedName?: string) =>
+      ipcRenderer.invoke('util:saveImage', imageUrl, suggestedName),
+  },
+  agents: {
+    list: () => ipcRenderer.invoke('agents:list'),
+    saveAvatar: (agentId: string, base64DataUrl: string) =>
+      ipcRenderer.invoke('agents:saveAvatar', agentId, base64DataUrl),
+    create: (params: { name: string; code?: string; emoji?: string }) => ipcRenderer.invoke('agents:create', params),
+    delete: (agentId: string) => ipcRenderer.invoke('agents:delete', agentId),
+    update: (params: { agentId: string; name?: string; model?: string }) => ipcRenderer.invoke('agents:update', params),
+    rename: (params: { agentId: string; newName: string }) => ipcRenderer.invoke('agents:rename', params),
+  },
+  persona: {
+    getFiles: (agentId: string) => ipcRenderer.invoke('persona:getFiles', agentId),
+    getWorkspacePath: (agentId: string) => ipcRenderer.invoke('persona:getWorkspacePath', agentId),
+    listFiles: (agentId: string) => ipcRenderer.invoke('persona:listFiles', agentId),
+    getFile: (params: { agentId: string; file: string }) => ipcRenderer.invoke('persona:getFile', params),
+    saveFile: (params: { agentId: string; file: string; content: string }) =>
+      ipcRenderer.invoke('persona:saveFile', params),
+    saveSimple: (params: {
+      agentId: string
+      identity?: { name?: string; creature?: string; vibe?: string; emoji?: string; avatar?: string }
+      soul?: string
+      user?: { name?: string; preferredAddress?: string; notes?: string }
+    }) => ipcRenderer.invoke('persona:saveSimple', params),
+    saveRaw: (params: { agentId: string; file: string; content: string }) =>
+      ipcRenderer.invoke('persona:saveRaw', params),
+  },
+  env: {
+    read: () => ipcRenderer.invoke('env:read'),
+    write: (entries: Array<{ key: string; value: string }>) => ipcRenderer.invoke('env:write', entries),
+  },
+  backup: {
+    create: () => ipcRenderer.invoke('backup:create'),
+    restore: () => ipcRenderer.invoke('backup:restore'),
+  },
+  cron: {
+    list: (params?: Record<string, unknown>) => ipcRenderer.invoke('cron:list', params),
+    status: () => ipcRenderer.invoke('cron:status'),
+    add: (params: Record<string, unknown>) => ipcRenderer.invoke('cron:add', params),
+    update: (params: { id?: string; jobId?: string; patch: Record<string, unknown> }) =>
+      ipcRenderer.invoke('cron:update', params),
+    remove: (params: { id?: string; jobId?: string }) => ipcRenderer.invoke('cron:remove', params),
+    run: (params: { id?: string; jobId?: string; mode?: 'due' | 'force' }) =>
+      ipcRenderer.invoke('cron:run', params),
+  },
+  integrations: {
+    patchChannels: (channelId: string, config: Record<string, unknown>) =>
+      ipcRenderer.invoke('config:patchChannels', channelId, config),
+    runChannelsAdd: (channel: string, token: string) =>
+      ipcRenderer.invoke('integrations:runChannelsAdd', channel, token),
+    ensurePlugin: (pluginId: string) => ipcRenderer.invoke('integrations:ensurePlugin', pluginId),
+    pairingApprove: (channel: string, code: string) =>
+      ipcRenderer.invoke('integrations:pairingApprove', channel, code),
+  },
+  skills: {
+    list: () => ipcRenderer.invoke('skills:list'),
+    toggle: (skillKey: string, enabled: boolean) => ipcRenderer.invoke('skills:toggle', skillKey, enabled),
+    installZip: (zipBase64: string, fileName: string) => ipcRenderer.invoke('skills:installZip', zipBase64, fileName),
+    installGithub: (githubUrl: string) => ipcRenderer.invoke('skills:installGithub', githubUrl),
+  },
+  platform: process.platform,
+})
