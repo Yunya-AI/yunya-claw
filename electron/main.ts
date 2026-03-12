@@ -1510,6 +1510,23 @@ function loadAllSkills(): SkillMeta[] {
 
 // ---- Window ----
 
+/** 将原始图片创建为包含多尺寸的 NativeImage（Windows 任务栏需要） */
+function createMultiSizeIcon(imagePath: string): Electron.NativeImage | undefined {
+  const original = nativeImage.createFromPath(imagePath)
+  if (original.isEmpty()) return undefined
+  if (process.platform !== 'win32') return original
+  // Windows 任务栏需要多尺寸图标：16(小图标)、32(标准)、48(任务栏)、256(大图标视图)
+  const sizes = [16, 32, 48, 256]
+  const resized = sizes.map(s => original.resize({ width: s, height: s }))
+  // 用最大尺寸作为基础，再逐个添加不同分辨率的表示
+  const multi = nativeImage.createEmpty()
+  for (const img of resized) {
+    const size = img.getSize()
+    multi.addRepresentation({ width: size.width, height: size.height, buffer: img.toPNG(), scaleFactor: 1.0 })
+  }
+  return multi.isEmpty() ? original : multi
+}
+
 /** 获取应用外观：标题与图标（用于 createWindow 及动态更新） */
 function getAppearance(): { title: string; icon: Electron.NativeImage | undefined } {
   const cfg = YunyaClawConfigService.read()
@@ -1517,12 +1534,11 @@ function getAppearance(): { title: string; icon: Electron.NativeImage | undefine
   const customIconPath = getAppearanceIconPath()
   let icon: Electron.NativeImage | undefined
   if (fs.existsSync(customIconPath)) {
-    icon = nativeImage.createFromPath(customIconPath)
-    if (icon.isEmpty()) icon = undefined
+    icon = createMultiSizeIcon(customIconPath)
   }
   if (!icon) {
     const defaultPath = path.join(app.getAppPath(), 'public', 'icon.png')
-    icon = fs.existsSync(defaultPath) ? nativeImage.createFromPath(defaultPath) : undefined
+    icon = fs.existsSync(defaultPath) ? createMultiSizeIcon(defaultPath) : undefined
   }
   return { title: appName, icon }
 }
@@ -1532,7 +1548,15 @@ function applyAppearanceToWindow(): void {
   if (!mainWindow || mainWindow.isDestroyed()) return
   const { title, icon } = getAppearance()
   mainWindow.setTitle(title)
-  if (icon && !icon.isEmpty()) mainWindow.setIcon(icon)
+  if (icon && !icon.isEmpty()) {
+    mainWindow.setIcon(icon)
+    // Windows + frame:false: setIcon 可能不刷新任务栏图标，
+    // 通过 setSkipTaskbar 切换强制 Windows 重新注册任务栏条目
+    if (process.platform === 'win32') {
+      mainWindow.setSkipTaskbar(true)
+      mainWindow.setSkipTaskbar(false)
+    }
+  }
 }
 
 function createWindow() {
@@ -2711,6 +2735,11 @@ interface ProviderData {
 }
 
 // ---- App Lifecycle ----
+
+// Windows: 设置 AppUserModelId，确保任务栏图标正确关联
+if (process.platform === 'win32') {
+  app.setAppUserModelId('ai.yunya.claw')
+}
 
 app.whenReady().then(async () => {
   debugLog('[App] started', 'isPackaged:', app.isPackaged, 'resourcesPath:', process.resourcesPath)
