@@ -98,17 +98,6 @@ yunya-claw/
 
 [MIT](LICENSE)
 
-## 开源到 GitHub
-
-1. 在 GitHub 创建新仓库（如 `your-username/yunya-claw`）
-2. 将 `package.json` 中的 `repository`、`homepage`、`bugs` 里的 `your-username` 替换为你的 GitHub 用户名
-3. 初始化并推送：
-
-```bash
-git submodule update --init
-git remote add origin https://github.com/your-username/yunya-claw.git
-git push -u origin master
-```
 
 ## 联系作者
 
