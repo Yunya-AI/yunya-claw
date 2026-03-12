@@ -19,6 +19,16 @@ YunyaClaw 是一款 Windows 桌面应用，将 [OpenClaw](https://github.com/ope
 - **内置集成**：QQ 机器人、钉钉连接器等插件预打包，按需启用
 - **配置统一**：配置与数据存放在 `~/.openclaw/`，与 OpenClaw 生态兼容
 
+## 截图
+
+| 一键安装 | 自定义外观 | 初始对话 |
+|----------|------------|----------|
+| <img src="docs/images/01安装.jpg" width="240"/> | <img src="docs/images/15设置头像和名称.jpg" width="240"/> | <img src="docs/images/08初始对话.jpg" width="240"/> |
+
+| 模型选择 | 技能页面 | 接入界面 |
+|----------|----------|----------|
+| <img src="docs/images/07选择模型.jpg" width="240"/> | <img src="docs/images/13技能页面.jpg" width="240"/> | <img src="docs/images/14接入页面.jpg" width="240"/> |
+
 ## 环境要求
 
 - **开发**：Node.js 22+，pnpm
