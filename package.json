@@ -48,7 +48,8 @@
       "allowToChangeInstallationDirectory": true,
       "installerLanguages": ["zh_CN", "en_US"],
       "include": "build/installer.nsh",
-      "warningsAsErrors": false
+      "warningsAsErrors": false,
+      "guid": "ai.yunya.claw"
     },
     "extraFiles": [
       {

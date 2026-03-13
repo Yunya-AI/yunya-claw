@@ -11,8 +11,22 @@ ${StrStr}
 Var AddToPathCheckbox
 Var AddToPath
 
+; ─── 安装前：关闭正在运行的旧实例 ───
+!macro customInit
+  ; 尝试关闭正在运行的 YunyaClaw 进程，确保文件不被锁定
+  nsExec::ExecToStack 'taskkill /f /im YunyaClaw.exe'
+  Pop $0
+  Pop $1
+  ; 也关闭可能残留的 node.exe 网关进程（通过命令行匹配）
+  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -Command "Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object { $_.Path -like ''*YunyaClaw*'' -or $_.Path -like ''*yunya*'' } | Stop-Process -Force -ErrorAction SilentlyContinue"'
+  Pop $0
+  Pop $1
+  ; 等待进程完全退出，释放文件锁
+  Sleep 1000
+!macroend
+
 ; 只在安装器里插入页面，且把函数定义也放进宏里
-; 避免在 BUILD_UNINSTALLER 阶段出现“函数未引用”的 warning 6010
+; 避免在 BUILD_UNINSTALLER 阶段出现"函数未引用"的 warning 6010
 !macro customPageAfterChangeDir
   !ifndef BUILD_UNINSTALLER
     Page custom AddToPathPage AddToPathPageLeave "添加 openclaw 到 PATH"
@@ -41,6 +55,15 @@ Var AddToPath
 !macroend
 
 !macro customUnInstall
+  ; 卸载前也先关闭正在运行的实例
+  nsExec::ExecToStack 'taskkill /f /im YunyaClaw.exe'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -Command "Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object { $_.Path -like ''*YunyaClaw*'' -or $_.Path -like ''*yunya*'' } | Stop-Process -Force -ErrorAction SilentlyContinue"'
+  Pop $0
+  Pop $1
+  Sleep 1000
+
   ; 卸载时用 PowerShell 从用户 PATH 中移除 $INSTDIR
   ; 避免在卸载器上下文使用 StrRep（其内部 Call 不支持 un. 前缀限制）
   nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -Command "$p=[Environment]::GetEnvironmentVariable(''Path'',''User'');$parts=$p-split'';''|?{$_ -ne ''$INSTDIR'' -and $_ -ne ''''};$n=$parts-join'';'';if($n-ne$p){[Environment]::SetEnvironmentVariable(''Path'',$n,''User'')}"'
