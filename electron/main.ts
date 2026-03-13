@@ -1543,19 +1543,26 @@ function getAppearance(): { title: string; icon: Electron.NativeImage | undefine
   return { title: appName, icon }
 }
 
-/** 将当前外观应用到主窗口（标题、图标） */
-function applyAppearanceToWindow(): void {
+/** 将当前外观应用到主窗口（标题、图标）
+ *  @param refreshTaskbar 是否强制刷新 Windows 任务栏（动态修改时需要，启动时不需要）
+ */
+function applyAppearanceToWindow(refreshTaskbar = false): void {
   if (!mainWindow || mainWindow.isDestroyed()) return
   const { title, icon } = getAppearance()
   mainWindow.setTitle(title)
   if (icon && !icon.isEmpty()) {
     mainWindow.setIcon(icon)
-    // Windows + frame:false: setIcon 可能不刷新任务栏图标，
-    // 通过 setSkipTaskbar 切换强制 Windows 重新注册任务栏条目
-    if (process.platform === 'win32') {
-      mainWindow.setSkipTaskbar(true)
-      mainWindow.setSkipTaskbar(false)
-    }
+  }
+  // Windows + frame:false: setTitle/setIcon 可能不刷新任务栏，
+  // 通过 setSkipTaskbar 切换强制 Windows 重新注册任务栏条目。
+  // 需要加延时，否则 Windows 来不及处理注销/重注册。
+  if (refreshTaskbar && process.platform === 'win32') {
+    mainWindow.setSkipTaskbar(true)
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setSkipTaskbar(false)
+      }
+    }, 150)
   }
 }
 
@@ -1942,7 +1949,7 @@ ipcMain.handle('appearance:getIconDataUrl', () => {
 
 ipcMain.handle('appearance:setAppName', async (_event, appName: string) => {
   await YunyaClawConfigService.update({ appName: typeof appName === 'string' ? appName.trim() || 'Yunya Claw' : 'Yunya Claw' })
-  applyAppearanceToWindow()
+  applyAppearanceToWindow(true)
   return { success: true }
 })
 
@@ -1955,7 +1962,7 @@ ipcMain.handle('appearance:setIcon', async (_event, base64: string) => {
     const data = base64.replace(/^data:image\/\w+;base64,/, '')
     fs.writeFileSync(p, Buffer.from(data, 'base64'))
     await YunyaClawConfigService.update({ customIcon: true })
-    applyAppearanceToWindow()
+    applyAppearanceToWindow(true)
     return { success: true }
   } catch (err) {
     return { success: false, error: String(err) }
@@ -1968,7 +1975,7 @@ ipcMain.handle('appearance:clearIcon', async () => {
     try { fs.unlinkSync(p) } catch (err) { console.error('[Appearance] 删除图标失败:', err) }
   }
   await YunyaClawConfigService.update({ customIcon: false })
-  applyAppearanceToWindow()
+  applyAppearanceToWindow(true)
   return { success: true }
 })
 
