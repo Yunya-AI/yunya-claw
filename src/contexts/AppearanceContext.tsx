@@ -9,7 +9,7 @@ interface AppearanceContextValue {
 const AppearanceContext = createContext<AppearanceContextValue | null>(null)
 
 export function AppearanceProvider({ children }: { children: ReactNode }) {
-  const [appName, setAppName] = useState('云涯小夏')
+  const [appName, setAppName] = useState('Yunya Claw')
   const [iconDataUrl, setIconDataUrl] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
@@ -44,5 +44,5 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
 
 export function useAppearance() {
   const ctx = useContext(AppearanceContext)
-  return ctx ?? { appName: '云涯小夏', iconDataUrl: null, refresh: async () => {} }
+  return ctx ?? { appName: 'Yunya Claw', iconDataUrl: null, refresh: async () => {} }
 }

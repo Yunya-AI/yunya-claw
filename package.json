@@ -50,7 +50,7 @@
       "include": "build/installer.nsh",
       "warningsAsErrors": false,
       "guid": "ai.yunya.claw",
-      "shortcutName": "云涯小夏"
+      "shortcutName": "Yunya Claw"
     },
     "extraFiles": [
       {

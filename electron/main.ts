@@ -1530,7 +1530,7 @@ function createMultiSizeIcon(imagePath: string): Electron.NativeImage | undefine
 /** 获取应用外观：标题与图标（用于 createWindow 及动态更新） */
 function getAppearance(): { title: string; icon: Electron.NativeImage | undefined } {
   const cfg = YunyaClawConfigService.read()
-  const appName = typeof cfg.appName === 'string' && cfg.appName.trim() ? cfg.appName.trim() : '云涯小夏'
+  const appName = typeof cfg.appName === 'string' && cfg.appName.trim() ? cfg.appName.trim() : 'Yunya Claw'
   const customIconPath = getAppearanceIconPath()
   let icon: Electron.NativeImage | undefined
   if (fs.existsSync(customIconPath)) {
@@ -1920,7 +1920,7 @@ ipcMain.handle('yunyaClaw:update', async (_event, partial: Record<string, unknow
 // 应用外观：appName 存 yunyaClaw.json，图标存 ~/.openclaw/.yunya-claw-icon.png
 ipcMain.handle('appearance:get', () => {
   const cfg = YunyaClawConfigService.read()
-  const appName = typeof cfg.appName === 'string' && cfg.appName.trim() ? cfg.appName.trim() : '云涯小夏'
+  const appName = typeof cfg.appName === 'string' && cfg.appName.trim() ? cfg.appName.trim() : 'Yunya Claw'
   const customIconPath = getAppearanceIconPath()
   const hasCustomIcon = fs.existsSync(customIconPath)
   return { appName, hasCustomIcon }
@@ -1941,7 +1941,7 @@ ipcMain.handle('appearance:getIconDataUrl', () => {
 })
 
 ipcMain.handle('appearance:setAppName', async (_event, appName: string) => {
-  await YunyaClawConfigService.update({ appName: typeof appName === 'string' ? appName.trim() || '云涯小夏' : '云涯小夏' })
+  await YunyaClawConfigService.update({ appName: typeof appName === 'string' ? appName.trim() || 'Yunya Claw' : 'Yunya Claw' })
   applyAppearanceToWindow()
   return { success: true }
 })
