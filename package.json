@@ -5,7 +5,7 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "predev": "node scripts/bundle-plugins.mjs",
+    "predev": "node scripts/ensure-openclaw-built.mjs && node scripts/bundle-plugins.mjs",
     "build": "vite build",
     "kill-release-lock": "node scripts/kill-release-lock.mjs",
     "build:win": "node scripts/kill-release-lock.mjs && node scripts/ensure-node-win.mjs && node scripts/build-openclaw-release.mjs && vite build && node scripts/electron-builder-win.mjs",

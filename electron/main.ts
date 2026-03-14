@@ -1690,7 +1690,7 @@ function startGateway(): Promise<void> {
         return
       }
       debugLog('[Gateway] spawn:', nodePath, 'cwd:', openclawDir, 'config:', configPath)
-      gatewayProcess = spawn(nodePath, ['openclaw.mjs', 'gateway', '--port', String(gatewayPort)], {
+      gatewayProcess = spawn(nodePath, ['openclaw.mjs', 'gateway', '--port', String(gatewayPort), '--force'], {
         cwd: openclawDir,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
