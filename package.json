@@ -31,7 +31,15 @@
     "yunya-claw"
   ],
   "build": {
-    "files": ["**/*", "!openclaw", "!release", "!release-*", "!.claude", "!.git", "!.playwright-mcp"],
+    "files": [
+      "**/*",
+      "!openclaw",
+      "!release",
+      "!release-*",
+      "!.claude",
+      "!.git",
+      "!.playwright-mcp"
+    ],
     "appId": "ai.yunya.claw",
     "productName": "YunyaClaw",
     "directories": {
@@ -39,14 +47,22 @@
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "public/icon.png"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerLanguages": ["zh_CN", "en_US"],
+      "installerLanguages": [
+        "zh_CN",
+        "en_US"
+      ],
       "include": "build/installer.nsh",
       "warningsAsErrors": false,
       "guid": "ai.yunya.claw",
@@ -62,22 +78,30 @@
       {
         "from": "resources/bundled-plugins",
         "to": "bundled-plugins",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "resources/bundled-skills",
         "to": "bundled-skills",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "resources/openclaw-release/node_modules",
         "to": "openclaw/node_modules",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "resources/node-win",
         "to": "node-win",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ]
   },

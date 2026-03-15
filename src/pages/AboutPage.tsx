@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Info } from 'lucide-react'
+import { Info, Clipboard, Keyboard } from 'lucide-react'
 import { useAppearance } from '@/contexts/AppearanceContext'
+import type { PageKey } from '@/components/layout/Sidebar'
 
 function QrCard({ src, alt, fallback, desc }: { src: string; alt: string; fallback: string; desc: string }) {
   const [loaded, setLoaded] = useState(true)
@@ -23,7 +24,7 @@ function QrCard({ src, alt, fallback, desc }: { src: string; alt: string; fallba
   )
 }
 
-export default function AboutPage() {
+export default function AboutPage({ onNavigate }: { onNavigate?: (page: PageKey) => void }) {
   const { appName } = useAppearance()
 
   return (
@@ -110,10 +111,41 @@ export default function AboutPage() {
               desc="扫描二维码，添加我为联系人"
             />
           </div>
-          <p className="text-[10px] text-muted-foreground/60 mt-6 text-center">
-            powered by <a href="https://agiyiya.com" target="_blank" rel="noopener noreferrer" className="hover:underline">agiyiya.com</a>
-          </p>
         </section>
+
+        {/* 实用工具 */}
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-foreground">实用工具</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              onClick={() => onNavigate?.('clipboard')}
+              className="flex items-center gap-3 p-4 rounded-xl bg-muted/20 hover:bg-muted/30 transition-colors text-left group cursor-pointer"
+            >
+              <div className="p-2 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
+                <Clipboard className="w-5 h-5 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground">剪贴板监控</p>
+                <p className="text-xs text-muted-foreground mt-0.5">记录复制历史，支持截图与分析</p>
+              </div>
+            </button>
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/20 text-left">
+              <div className="p-2 rounded-lg bg-muted/30">
+                <Keyboard className="w-5 h-5 text-muted-foreground" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground">快捷粘贴</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  全局快捷键 <kbd className="px-1.5 py-0.5 bg-muted/50 rounded text-[10px] font-mono">Alt+V</kbd>
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <p className="text-[10px] text-muted-foreground/60 text-center">
+          powered by <a href="https://agiyiya.com" target="_blank" rel="noopener noreferrer" className="hover:underline">agiyiya.com</a>
+        </p>
       </div>
     </div>
   )

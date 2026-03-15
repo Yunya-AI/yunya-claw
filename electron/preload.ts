@@ -132,5 +132,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
     installZip: (zipBase64: string, fileName: string) => ipcRenderer.invoke('skills:installZip', zipBase64, fileName),
     installGithub: (githubUrl: string) => ipcRenderer.invoke('skills:installGithub', githubUrl),
   },
+  clipboard: {
+    getRecords: (query?: string) => ipcRenderer.invoke('clipboard:getRecords', query),
+    deleteRecord: (id: string) => ipcRenderer.invoke('clipboard:deleteRecord', id),
+    clearAll: () => ipcRenderer.invoke('clipboard:clearAll'),
+    togglePin: (id: string) => ipcRenderer.invoke('clipboard:togglePin', id),
+    getScreenshot: (fileName: string) => ipcRenderer.invoke('clipboard:getScreenshot', fileName),
+    paste: (text: string) => ipcRenderer.invoke('clipboard:paste', text),
+    toggleMonitor: (enable: boolean) => ipcRenderer.invoke('clipboard:toggleMonitor', enable),
+    status: () => ipcRenderer.invoke('clipboard:status'),
+    updateAnalysis: (id: string, analysis: string) => ipcRenderer.invoke('clipboard:updateAnalysis', id, analysis),
+    onShow: (callback: () => void) => {
+      const wrapped = () => callback()
+      ipcRenderer.on('quickpaste:show', wrapped)
+      return () => ipcRenderer.removeListener('quickpaste:show', wrapped)
+    },
+  },
+  lifecycle: {
+    onStep: (callback: (data: { phase: 'starting' | 'stopping'; step: string }) => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, data: { phase: 'starting' | 'stopping'; step: string }) => callback(data)
+      ipcRenderer.on('app:lifecycle', wrapped)
+      return () => ipcRenderer.removeListener('app:lifecycle', wrapped)
+    },
+  },
   platform: process.platform,
 })

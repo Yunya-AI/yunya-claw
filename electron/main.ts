@@ -9,6 +9,7 @@ import http from 'node:http'
 import { ensurePlugin } from './bundled-plugins'
 import { ensureBundledSkills } from './bundled-skills'
 import { runAllMigrations } from './config-migration'
+import { ClipboardMonitor, registerClipboardIpc, registerQuickPasteShortcut, unregisterQuickPasteShortcut, setClipboardMonitorInstance } from './clipboard-monitor'
 import { stripUserMessageForDisplay } from '../src/lib/chat-utils'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const archiver = require('archiver') as (format: string, options?: { zlib?: { level?: number } }) => {
@@ -55,6 +56,7 @@ process.env.VITE_PUBLIC = process.env.VITE_DEV_SERVER_URL
   : process.env.DIST
 
 let mainWindow: BrowserWindow | null = null
+let clipboardMonitor: ClipboardMonitor | null = null
 let gatewayProcess: ChildProcess | null = null
 let gatewayStarting = false
 let gatewayPort = 18789
@@ -1651,6 +1653,69 @@ function loadEnvForGateway(): Record<string, string> {
   }
 }
 
+/** 清理残留的 openclaw gateway 进程（跨平台） */
+function killLeftoverGatewayProcesses(): Promise<void> {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(resolve, 5000)
+    const finish = () => { clearTimeout(timeout); resolve() }
+
+    if (process.platform === 'win32') {
+      // Windows: 用 wmic 按命令行查找 node.exe 进程
+      let wmicClosed = false
+      const wmic = spawn('wmic', [
+        'process', 'where',
+        "commandline like '%openclaw.mjs%gateway%' and name='node.exe'",
+        'get', 'processid',
+        '/format:list',
+      ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+
+      let stdout = ''
+      let stderr = ''
+      wmic.stdout?.on('data', (d: Buffer) => { stdout += d.toString() })
+      wmic.stderr?.on('data', (d: Buffer) => { stderr += d.toString() })
+      wmic.on('close', () => {
+        if (wmicClosed) return
+        wmicClosed = true
+        const pids = [...stdout.matchAll(/ProcessId=(\d+)/gi)].map(m => m[1])
+        if (pids.length === 0) { finish(); return }
+        console.log(`[Gateway] 发现 ${pids.length} 个残留进程，正在清理: ${pids.join(', ')}`)
+        let pending = pids.length
+        const done = () => { if (--pending <= 0) finish() }
+        for (const pid of pids) {
+          const tk = spawn('taskkill', ['/PID', pid, '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+          tk.on('close', done)
+          tk.on('error', done)
+        }
+      })
+      wmic.on('error', (err) => {
+        if (!wmicClosed) console.warn('[Gateway] wmic 执行失败:', err)
+        wmicClosed = true
+        finish()
+      })
+    } else {
+      // macOS / Linux: 用 pgrep + kill 按命令行匹配
+      const pgrep = spawn('pgrep', ['-f', 'openclaw.mjs.*gateway'], { stdio: ['pipe', 'pipe', 'pipe'] })
+
+      let stdout = ''
+      pgrep.stdout?.on('data', (d: Buffer) => { stdout += d.toString() })
+      pgrep.on('close', () => {
+        const pids = stdout.trim().split(/\s+/).filter(Boolean)
+        if (pids.length === 0) { finish(); return }
+        console.log(`[Gateway] 发现 ${pids.length} 个残留进程，正在清理: ${pids.join(', ')}`)
+        let pending = pids.length
+        const done = () => { if (--pending <= 0) finish() }
+        for (const pid of pids) {
+          try {
+            process.kill(Number(pid), 'SIGKILL')
+          } catch { /* 忽略已退出的进程 */ }
+          done()
+        }
+      })
+      pgrep.on('error', () => finish())
+    }
+  })
+}
+
 function startGateway(): Promise<void> {
   return new Promise(async (resolve) => {
     const openclawDir = getOpenclawProjectRoot()
@@ -1658,6 +1723,10 @@ function startGateway(): Promise<void> {
     try {
       gatewayStarting = true
       mainWindow?.webContents.send('gateway:status', { running: false, starting: true, initializing: false })
+
+      // 先清理可能残留的旧 gateway 进程
+      await killLeftoverGatewayProcesses()
+
       gatewayPort = await findAvailablePort()
       console.log(`[Gateway] 使用端口: ${gatewayPort}`)
 
@@ -1690,7 +1759,7 @@ function startGateway(): Promise<void> {
         return
       }
       debugLog('[Gateway] spawn:', nodePath, 'cwd:', openclawDir, 'config:', configPath)
-      gatewayProcess = spawn(nodePath, ['openclaw.mjs', 'gateway', '--port', String(gatewayPort), '--force'], {
+      gatewayProcess = spawn(nodePath, ['openclaw.mjs', 'gateway', '--port', String(gatewayPort)], {
         cwd: openclawDir,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
@@ -2748,24 +2817,53 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('ai.yunya.claw')
 }
 
+/** 向渲染进程发送生命周期步骤通知 */
+function sendLifecycle(phase: 'starting' | 'stopping', step: string): void {
+  debugLog(`[Lifecycle] ${phase}: ${step}`)
+  try { mainWindow?.webContents.send('app:lifecycle', { phase, step }) } catch { /* 忽略 */ }
+}
+
 app.whenReady().then(async () => {
   debugLog('[App] started', 'isPackaged:', app.isPackaged, 'resourcesPath:', process.resourcesPath)
+
   ensureProviderWebsites()
+
+  sendLifecycle('starting', '正在执行配置迁移...')
   runAllMigrations({ readOpenclawConfig, writeOpenclawConfig, readYunyaClawConfigRaw, writeYunyaClawConfigRaw })
+
+  sendLifecycle('starting', '正在初始化默认模型提供商...')
   ensureDefaultProviders()
   ensureGatewayConfig()
+
+  sendLifecycle('starting', '正在加载内置技能...')
   ensureBundledSkills({
     getOpenclawConfigDir,
     readOpenclawConfig,
     writeOpenclawConfig,
   })
+
+  sendLifecycle('starting', '正在初始化剪贴板监控...')
+  clipboardMonitor = new ClipboardMonitor({
+    configDir: getOpenclawConfigDir(),
+    onNewRecord: (record) => {
+      mainWindow?.webContents.send('clipboard:newRecord', record)
+    },
+  })
+  setClipboardMonitorInstance(clipboardMonitor)
+  registerClipboardIpc(clipboardMonitor)
+  clipboardMonitor.restoreState() // 恢复上次的启用状态
+
   createWindow()
-  // 自动启动 Gateway
+
+  registerQuickPasteShortcut(mainWindow)
+
+  sendLifecycle('starting', '正在启动 Gateway...')
   await startGateway()
+  sendLifecycle('starting', '')  // 清空，启动完成
 })
 
 app.on('window-all-closed', () => {
-  stopGateway()
+  // 不在此处清理，统一由 before-quit 处理，避免异步清理与 app.quit() 竞争
   if (process.platform !== 'darwin') {
     app.quit()
   }
@@ -2783,10 +2881,15 @@ app.on('before-quit', (event) => {
   event.preventDefault()
   appQuitting = true
 
+  sendLifecycle('stopping', '正在停止剪贴板监控...')
+  clipboardMonitor?.stop()
+  unregisterQuickPasteShortcut()
+
   const killIntegrationChildren = (): Promise<void> => {
     const children = [...integrationChildren]
     integrationChildren.clear()
     if (children.length === 0) return Promise.resolve()
+    sendLifecycle('stopping', `正在关闭 ${children.length} 个接入子进程...`)
     return new Promise((resolve) => {
       let pending = children.length
       const onDone = () => {
@@ -2810,7 +2913,10 @@ app.on('before-quit', (event) => {
     })
   }
 
+  // 串行等待所有子进程退出后再 exit，确保不留孤儿进程
   killIntegrationChildren()
-    .then(() => stopGateway())
-    .then(() => app.exit(0))
+    .then(() => { sendLifecycle('stopping', '正在停止 Gateway...'); return stopGateway() })
+    .then(() => { sendLifecycle('stopping', '正在清理残留进程...'); return killLeftoverGatewayProcesses() })
+    .then(() => { sendLifecycle('stopping', '关闭完成'); app.exit(0) })
+    .catch(() => app.exit(1))
 })

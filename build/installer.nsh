@@ -13,16 +13,25 @@ Var AddToPath
 
 ; ─── 安装前：关闭正在运行的旧实例 ───
 !macro customInit
-  ; 尝试关闭正在运行的 YunyaClaw 进程，确保文件不被锁定
-  nsExec::ExecToStack 'taskkill /f /im YunyaClaw.exe'
+  ; 1. 用 /T 杀进程树：主进程 + 所有子进程（node.exe gateway 等）
+  nsExec::ExecToStack 'taskkill /f /t /im YunyaClaw.exe'
   Pop $0
   Pop $1
-  ; 也关闭可能残留的 node.exe 网关进程（通过命令行匹配）
-  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -Command "Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object { $_.Path -like ''*YunyaClaw*'' -or $_.Path -like ''*yunya*'' } | Stop-Process -Force -ErrorAction SilentlyContinue"'
+  ; 2. 兜底：按命令行匹配残留的 openclaw gateway node 进程
+  nsExec::ExecToStack 'cmd.exe /c wmic process where "commandline like ''%openclaw.mjs%gateway%'' and name=''node.exe''" call terminate >nul 2>&1'
   Pop $0
   Pop $1
-  ; 等待进程完全退出，释放文件锁
-  Sleep 1000
+  ; 3. 兜底：按安装路径匹配残留的 node.exe
+  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -Command "Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object { $_.Path -like ''*YunyaClaw*'' -or $_.Path -like ''*yunya-claw*'' } | Stop-Process -Force -ErrorAction SilentlyContinue"'
+  Pop $0
+  Pop $1
+  ; 等待进程完全退出并释放文件锁（2秒更稳妥）
+  Sleep 2000
+  ; 4. 再次尝试，确保彻底清理（某些进程第一轮可能正在退出中）
+  nsExec::ExecToStack 'taskkill /f /t /im YunyaClaw.exe'
+  Pop $0
+  Pop $1
+  Sleep 500
 !macroend
 
 ; 只在安装器里插入页面，且把函数定义也放进宏里
@@ -55,14 +64,21 @@ Var AddToPath
 !macroend
 
 !macro customUnInstall
-  ; 卸载前也先关闭正在运行的实例
-  nsExec::ExecToStack 'taskkill /f /im YunyaClaw.exe'
+  ; 卸载前关闭正在运行的实例（含进程树）
+  nsExec::ExecToStack 'taskkill /f /t /im YunyaClaw.exe'
   Pop $0
   Pop $1
-  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -Command "Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object { $_.Path -like ''*YunyaClaw*'' -or $_.Path -like ''*yunya*'' } | Stop-Process -Force -ErrorAction SilentlyContinue"'
+  nsExec::ExecToStack 'cmd.exe /c wmic process where "commandline like ''%openclaw.mjs%gateway%'' and name=''node.exe''" call terminate >nul 2>&1'
   Pop $0
   Pop $1
-  Sleep 1000
+  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -Command "Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object { $_.Path -like ''*YunyaClaw*'' -or $_.Path -like ''*yunya-claw*'' } | Stop-Process -Force -ErrorAction SilentlyContinue"'
+  Pop $0
+  Pop $1
+  Sleep 2000
+  nsExec::ExecToStack 'taskkill /f /t /im YunyaClaw.exe'
+  Pop $0
+  Pop $1
+  Sleep 500
 
   ; 卸载时用 PowerShell 从用户 PATH 中移除 $INSTDIR
   ; 避免在卸载器上下文使用 StrRep（其内部 Call 不支持 un. 前缀限制）
