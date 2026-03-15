@@ -5,7 +5,7 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "predev": "node scripts/bundle-plugins.mjs",
+    "predev": "node scripts/ensure-openclaw-built.mjs && node scripts/bundle-plugins.mjs",
     "build": "vite build",
     "kill-release-lock": "node scripts/kill-release-lock.mjs",
     "build:win": "node scripts/kill-release-lock.mjs && node scripts/ensure-node-win.mjs && node scripts/build-openclaw-release.mjs && vite build && node scripts/electron-builder-win.mjs",
@@ -31,7 +31,15 @@
     "yunya-claw"
   ],
   "build": {
-    "files": ["**/*", "!openclaw", "!release", "!release-*", "!.claude", "!.git", "!.playwright-mcp"],
+    "files": [
+      "**/*",
+      "!openclaw",
+      "!release",
+      "!release-*",
+      "!.claude",
+      "!.git",
+      "!.playwright-mcp"
+    ],
     "appId": "ai.yunya.claw",
     "productName": "YunyaClaw",
     "directories": {
@@ -39,16 +47,26 @@
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "public/icon.png"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerLanguages": ["zh_CN", "en_US"],
+      "installerLanguages": [
+        "zh_CN",
+        "en_US"
+      ],
       "include": "build/installer.nsh",
-      "warningsAsErrors": false
+      "warningsAsErrors": false,
+      "guid": "ai.yunya.claw",
+      "shortcutName": "Yunya Claw"
     },
     "extraFiles": [
       {
@@ -60,22 +78,30 @@
       {
         "from": "resources/bundled-plugins",
         "to": "bundled-plugins",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "resources/bundled-skills",
         "to": "bundled-skills",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "resources/openclaw-release/node_modules",
         "to": "openclaw/node_modules",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "resources/node-win",
         "to": "node-win",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ]
   },

@@ -10,10 +10,13 @@ import PersonaPage from '@/pages/PersonaPage'
 import AboutPage from '@/pages/AboutPage'
 import IntegrationsPage from '@/pages/IntegrationsPage'
 import CronPage from '@/pages/CronPage'
+import ClipboardPage from '@/pages/ClipboardPage'
+import QuickPastePage from '@/pages/QuickPastePage'
 import { GatewayProvider } from '@/contexts/GatewayContext'
 import { AgentProvider } from '@/contexts/AgentContext'
 import { AppearanceProvider } from '@/contexts/AppearanceContext'
 import ErrorBoundary from '@/components/ErrorBoundary'
+import AppLifecycleOverlay from '@/components/AppLifecycleOverlay'
 
 function KeepAlive({ active, children }: { active: boolean; children: React.ReactNode }) {
   const mountedRef = useRef(false)
@@ -26,11 +29,18 @@ function KeepAlive({ active, children }: { active: boolean; children: React.Reac
   )
 }
 
+// 检查是否是快捷粘贴窗口模式
+const isQuickPasteMode = new URLSearchParams(window.location.search).get('mode') === 'quickpaste'
+
 export default function App() {
   const [currentPage, setCurrentPage] = useState<PageKey>('agents')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [configVersion, setConfigVersion] = useState(0)
   const handleConfigSaved = useCallback(() => setConfigVersion(v => v + 1), [])
+
+  if (isQuickPasteMode) {
+    return <QuickPastePage />
+  }
 
   return (
     <GatewayProvider>
@@ -54,6 +64,9 @@ export default function App() {
             <KeepAlive active={currentPage === 'dashboard'}>
               <DashboardPage />
             </KeepAlive>
+            <KeepAlive active={currentPage === 'clipboard'}>
+              <ClipboardPage active={currentPage === 'clipboard'} />
+            </KeepAlive>
             <KeepAlive active={currentPage === 'integrations'}>
               <IntegrationsPage />
             </KeepAlive>
@@ -73,7 +86,7 @@ export default function App() {
               <PersonaPage active={currentPage === 'persona'} />
             </KeepAlive>
             <KeepAlive active={currentPage === 'about'}>
-              <AboutPage />
+              <AboutPage onNavigate={setCurrentPage} />
             </KeepAlive>
             </ErrorBoundary>
           </main>
@@ -81,6 +94,7 @@ export default function App() {
       </div>
       </AppearanceProvider>
       </AgentProvider>
+      <AppLifecycleOverlay />
     </GatewayProvider>
   )
 }

@@ -1,3 +1,13 @@
+interface ClipboardRecordData {
+  id: string
+  text: string
+  timestamp: number
+  screenshotFile?: string
+  analysis?: string
+  pinned?: boolean
+  tags?: string[]
+}
+
 interface SkillData {
   name: string
   description: string
@@ -185,6 +195,20 @@ interface ElectronAPI {
     toggle: (skillKey: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>
     installZip: (zipBase64: string, fileName: string) => Promise<{ success: boolean; skillName?: string; error?: string }>
     installGithub: (githubUrl: string) => Promise<{ success: boolean; skillName?: string; error?: string }>
+  }
+  clipboard: {
+    getRecords: (query?: string) => Promise<{ success: boolean; records: ClipboardRecordData[]; error?: string }>
+    deleteRecord: (id: string) => Promise<{ success: boolean; error?: string }>
+    clearAll: () => Promise<{ success: boolean; error?: string }>
+    togglePin: (id: string) => Promise<{ success: boolean; error?: string }>
+    getScreenshot: (fileName: string) => Promise<{ success: boolean; dataUrl?: string; error?: string }>
+    paste: (text: string) => Promise<{ success: boolean; error?: string }>
+    toggleMonitor: (enable: boolean) => Promise<{ success: boolean; enabled: boolean; error?: string }>
+    status: () => Promise<{ success: boolean; enabled: boolean }>
+    updateAnalysis: (id: string, analysis: string) => Promise<{ success: boolean; error?: string }>
+  }
+  lifecycle: {
+    onStep: (callback: (data: { phase: 'starting' | 'stopping'; step: string }) => void) => () => void
   }
   platform: string
 }

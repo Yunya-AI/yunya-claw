@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { useAppearance } from '@/contexts/AppearanceContext'
 
-export type PageKey = 'agents' | 'dashboard' | 'integrations' | 'cron' | 'persona' | 'models' | 'settings' | 'skills' | 'about'
+export type PageKey = 'agents' | 'dashboard' | 'clipboard' | 'integrations' | 'cron' | 'persona' | 'models' | 'settings' | 'skills' | 'about'
 
 /** AI 图标：显示 "AI" 两字，颜色继承父级（未选中灰、选中橙） */
 function AIIcon({ className }: { className?: string }) {
