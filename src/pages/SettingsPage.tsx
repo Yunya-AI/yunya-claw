@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import DesktopPetConfig from '@/components/DesktopPetConfig'
 import {
   Plus,
   Trash2,
@@ -16,6 +17,7 @@ import {
   Palette,
   Upload,
   RotateCcw,
+  Cat,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppearance } from '@/contexts/AppearanceContext'
@@ -51,6 +53,10 @@ export default function SettingsPage({ active = true }: { active?: boolean }) {
   const [appearanceSaving, setAppearanceSaving] = useState(false)
   const iconInputRef = useRef<HTMLInputElement>(null)
   const { refresh: refreshAppearance } = useAppearance()
+
+  // 桌面宠物
+  const [petEnabled, setPetEnabled] = useState(false)
+  const [petLoading, setPetLoading] = useState(false)
 
   const loadEnv = useCallback(async () => {
     if (!window.electronAPI) return
@@ -91,6 +97,39 @@ export default function SettingsPage({ active = true }: { active?: boolean }) {
   useEffect(() => {
     if (active) loadAppearance()
   }, [active, loadAppearance])
+
+  // 加载桌面宠物状态
+  const loadPetState = useCallback(async () => {
+    if (!window.electronAPI?.desktopPet?.getConfig) return
+    setPetLoading(true)
+    try {
+      const res = await window.electronAPI.desktopPet.getConfig()
+      if (res.success && res.config) {
+        setPetEnabled(res.config.enabled)
+      }
+    } catch (err) {
+      console.error('读取桌面宠物状态失败:', err)
+    }
+    setPetLoading(false)
+  }, [])
+
+  useEffect(() => {
+    if (active) loadPetState()
+  }, [active, loadPetState])
+
+  const handleTogglePet = useCallback(async (enable: boolean) => {
+    if (!window.electronAPI?.desktopPet?.toggle) return
+    setPetLoading(true)
+    try {
+      const res = await window.electronAPI.desktopPet.toggle(enable)
+      if (res.success) {
+        setPetEnabled(res.enabled ?? enable)
+      }
+    } catch (err) {
+      console.error('切换桌面宠物失败:', err)
+    }
+    setPetLoading(false)
+  }, [])
 
   const handleAppNameSave = useCallback(async () => {
     if (!window.electronAPI?.appearance?.setAppName) return
@@ -471,6 +510,38 @@ export default function SettingsPage({ active = true }: { active?: boolean }) {
               {backupMessage.text}
             </p>
           )}
+        </section>
+
+        {/* 桌面宠物 */}
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Cat className="w-4 h-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold text-foreground">桌面宠物</h2>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            在桌面上显示一个可爱的小宠物，支持自定义动画和交互。
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => handleTogglePet(!petEnabled)}
+              disabled={petLoading}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer',
+                petEnabled
+                  ? 'bg-green-500/15 text-green-400 hover:bg-green-500/25'
+                  : 'bg-muted/30 text-muted-foreground hover:bg-muted/50'
+              )}
+            >
+              {petLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Cat className="w-3.5 h-3.5" />}
+              {petEnabled ? '已开启' : '已关闭'}
+            </button>
+          </div>
+
+          {/* 自定义形象配置 */}
+          <div className="mt-4 pt-4 border-t border-border">
+            <h3 className="text-xs font-medium text-muted-foreground mb-3">自定义形象</h3>
+            <DesktopPetConfig onSaved={loadPetState} />
+          </div>
         </section>
       </div>
     </div>

@@ -10,6 +10,7 @@ import { ensurePlugin } from './bundled-plugins'
 import { ensureBundledSkills } from './bundled-skills'
 import { runAllMigrations } from './config-migration'
 import { ClipboardMonitor, registerClipboardIpc, registerQuickPasteShortcut, unregisterQuickPasteShortcut, setClipboardMonitorInstance } from './clipboard-monitor'
+import { restorePetState, registerDesktopPetIpc } from './desktop-pet'
 import { stripUserMessageForDisplay } from '../src/lib/chat-utils'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const archiver = require('archiver') as (format: string, options?: { zlib?: { level?: number } }) => {
@@ -2853,9 +2854,15 @@ app.whenReady().then(async () => {
   registerClipboardIpc(clipboardMonitor)
   clipboardMonitor.restoreState() // 恢复上次的启用状态
 
+  // 注册桌面宠物 IPC
+  registerDesktopPetIpc()
+
   createWindow()
 
   registerQuickPasteShortcut(mainWindow)
+
+  // 恢复桌面宠物状态
+  restorePetState(mainWindow)
 
   sendLifecycle('starting', '正在启动 Gateway...')
   await startGateway()

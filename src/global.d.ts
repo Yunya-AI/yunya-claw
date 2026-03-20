@@ -8,6 +8,14 @@ interface ClipboardRecordData {
   tags?: string[]
 }
 
+// 桌面宠物动作
+interface PetAction {
+  name: string
+  frames: string[]
+  duration: number
+  repeat?: number
+}
+
 interface SkillData {
   name: string
   description: string
@@ -206,6 +214,24 @@ interface ElectronAPI {
     toggleMonitor: (enable: boolean) => Promise<{ success: boolean; enabled: boolean; error?: string }>
     status: () => Promise<{ success: boolean; enabled: boolean }>
     updateAnalysis: (id: string, analysis: string) => Promise<{ success: boolean; error?: string }>
+  }
+  desktopPet: {
+    getConfig: () => Promise<{ success: boolean; config?: { enabled: boolean; size: number; useCustomActions?: boolean }; error?: string }>
+    setSize: (size: number) => Promise<{ success: boolean; error?: string }>
+    showContextMenu: () => Promise<{ success: boolean; error?: string }>
+    toggle: (enable: boolean) => Promise<{ success: boolean; enabled?: boolean; error?: string }>
+    startDrag: () => Promise<{ success: boolean }>
+    drag: () => Promise<{ success: boolean }>
+    endDrag: () => Promise<{ success: boolean }>
+    getCustomActions: () => Promise<{ success: boolean; actions: PetAction[] }>
+    saveCustomActions: (actions: PetAction[]) => Promise<{ success: boolean; error?: string }>
+    uploadImage: () => Promise<{ success: boolean; dataUrl?: string; error?: string }>
+    saveImage: (base64Data: string) => Promise<{ success: boolean; path?: string; error?: string }>
+    generateVideo: (params: { imageDataUrl: string; prompt?: string; duration?: number }) => Promise<{ success: boolean; gifPath?: string; gifDataUrl?: string; error?: string }>
+    checkRembg: () => Promise<{ success: boolean; available: boolean }>
+    playAction: (actionName: string) => Promise<{ success: boolean; error?: string }>
+    onActionsUpdated: (callback: (data: { actions: Array<{ name: string; frames: string[]; duration: number; repeat?: number }>; useCustomActions: boolean }) => void) => () => void
+    onPlayAction: (callback: (action: { name: string; frames: string[]; duration: number }) => void) => () => void
   }
   lifecycle: {
     onStep: (callback: (data: { phase: 'starting' | 'stopping'; step: string }) => void) => () => void

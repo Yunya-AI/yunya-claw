@@ -34,6 +34,11 @@ body {
   overflow: hidden;
 }
 
+/* 桌面宠物模式：透明背景 */
+body.desktop-pet-mode {
+  background-color: transparent !important;
+}
+
 /* Electron 标题栏拖拽区域 */
 .drag-region {
   -webkit-app-region: drag;

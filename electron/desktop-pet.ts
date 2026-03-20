@@ -1,0 +1,997 @@
+import { BrowserWindow, screen, ipcMain, Menu, app, dialog } from 'electron'
+import path from 'node:path'
+import fs from 'node:fs'
+import crypto from 'node:crypto'
+import https from 'node:https'
+import { spawn } from 'node:child_process'
+
+// 桌面宠物窗口
+let petWindow: BrowserWindow | null = null
+
+// 宠物配置文件路径
+function getPetConfigPath(): string {
+  const configDir = path.join(app.getPath('userData'), 'openclaw')
+  return path.join(configDir, 'desktop-pet.json')
+}
+
+// 自定义动作配置文件路径
+function getCustomActionsPath(): string {
+  const configDir = path.join(app.getPath('userData'), 'openclaw')
+  return path.join(configDir, 'desktop-pet-actions.json')
+}
+
+// 图片资源目录
+function getPetImagesDir(): string {
+  const configDir = path.join(app.getPath('userData'), 'openclaw')
+  const imagesDir = path.join(configDir, 'pet-images')
+  if (!fs.existsSync(imagesDir)) {
+    fs.mkdirSync(imagesDir, { recursive: true })
+  }
+  return imagesDir
+}
+
+// 默认配置
+const defaultConfig = {
+  enabled: false,
+  size: 128,
+  x: undefined as number | undefined,
+  y: undefined as number | undefined,
+  useCustomActions: false, // 是否使用自定义动作
+}
+
+// 读取配置
+export function getPetConfig(): typeof defaultConfig {
+  try {
+    const configPath = getPetConfigPath()
+    if (fs.existsSync(configPath)) {
+      const raw = fs.readFileSync(configPath, 'utf-8')
+      return { ...defaultConfig, ...JSON.parse(raw) }
+    }
+  } catch (err) {
+    console.error('[DesktopPet] 读取配置失败:', err)
+  }
+  return { ...defaultConfig }
+}
+
+// 保存配置
+function savePetConfig(config: Partial<typeof defaultConfig>): void {
+  try {
+    const configPath = getPetConfigPath()
+    const dir = path.dirname(configPath)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
+    const current = getPetConfig()
+    fs.writeFileSync(configPath, JSON.stringify({ ...current, ...config }, null, 2), 'utf-8')
+  } catch (err) {
+    console.error('[DesktopPet] 保存配置失败:', err)
+  }
+}
+
+// 动作接口
+interface PetAction {
+  name: string
+  frames: string[]
+  duration: number
+  repeat?: number
+}
+
+// 读取自定义动作
+export function getCustomActions(): PetAction[] {
+  try {
+    const actionsPath = getCustomActionsPath()
+    if (fs.existsSync(actionsPath)) {
+      const raw = fs.readFileSync(actionsPath, 'utf-8')
+      return JSON.parse(raw)
+    }
+  } catch (err) {
+    console.error('[DesktopPet] 读取自定义动作失败:', err)
+  }
+  return []
+}
+
+// 保存自定义动作
+function saveCustomActions(actions: PetAction[]): void {
+  try {
+    const actionsPath = getCustomActionsPath()
+    const dir = path.dirname(actionsPath)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
+    fs.writeFileSync(actionsPath, JSON.stringify(actions, null, 2), 'utf-8')
+  } catch (err) {
+    console.error('[DesktopPet] 保存自定义动作失败:', err)
+  }
+}
+
+// 保存图片并返回本地路径
+function savePetImage(base64Data: string): string | null {
+  try {
+    // 解析 base64 数据
+    const matches = base64Data.match(/^data:image\/(\w+);base64,(.+)$/)
+    if (!matches) {
+      console.error('[DesktopPet] 无效的图片数据')
+      return null
+    }
+
+    const ext = matches[1]
+    const data = matches[2]
+    const hash = crypto.createHash('md5').update(data).digest('hex').substring(0, 12)
+    const fileName = `pet-${hash}.${ext}`
+    const imagesDir = getPetImagesDir()
+    const filePath = path.join(imagesDir, fileName)
+
+    // 如果文件已存在则直接返回
+    if (fs.existsSync(filePath)) {
+      return filePath
+    }
+
+    fs.writeFileSync(filePath, Buffer.from(data, 'base64'))
+    return filePath
+  } catch (err) {
+    console.error('[DesktopPet] 保存图片失败:', err)
+    return null
+  }
+}
+
+// 创建桌面宠物窗口
+export function createPetWindow(mainWindow: BrowserWindow | null): BrowserWindow | null {
+  console.log('[DesktopPet] createPetWindow called, mainWindow:', !!mainWindow)
+
+  if (petWindow && !petWindow.isDestroyed()) {
+    console.log('[DesktopPet] Window exists, showing...')
+    petWindow.show()
+    return petWindow
+  }
+
+  const config = getPetConfig()
+  const display = screen.getPrimaryDisplay()
+  const { width: screenWidth, height: screenHeight } = display.workAreaSize
+
+  // 计算位置（默认右下角）
+  const petSize = config.size || 128
+  const x = config.x ?? screenWidth - petSize - 20
+  const y = config.y ?? screenHeight - petSize - 20
+
+  console.log('[DesktopPet] Creating window at:', x, y, 'size:', petSize)
+
+  petWindow = new BrowserWindow({
+    width: petSize,
+    height: petSize,
+    x,
+    y,
+    frame: false,
+    transparent: true,
+    skipTaskbar: true,
+    resizable: false,
+    alwaysOnTop: true,
+    hasShadow: false,
+    focusable: true, // 需要可聚焦才能接收点击事件
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+
+  // 加载页面
+  const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
+  console.log('[DesktopPet] VITE_DEV_SERVER_URL:', VITE_DEV_SERVER_URL)
+  if (VITE_DEV_SERVER_URL) {
+    const url = `${VITE_DEV_SERVER_URL}?mode=desktoppet`
+    console.log('[DesktopPet] Loading URL:', url)
+    petWindow.loadURL(url)
+  } else {
+    const distIndex = path.join(process.env.DIST!, 'index.html')
+    console.log('[DesktopPet] Loading file:', distIndex)
+    petWindow.loadFile(distIndex, { query: { mode: 'desktoppet' } })
+  }
+
+  // 调试：显示 DevTools
+  if (process.env.OPENCLAW_DEBUG) {
+    petWindow.webContents.openDevTools({ mode: 'detach' })
+  }
+
+  petWindow.webContents.on('did-finish-load', () => {
+    console.log('[DesktopPet] Page loaded successfully')
+  })
+
+  petWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    console.error('[DesktopPet] Page load failed:', errorCode, errorDescription)
+  })
+
+  // 窗口关闭时清理
+  petWindow.on('closed', () => {
+    petWindow = null
+  })
+
+  // 保存位置
+  petWindow.on('moved', () => {
+    if (petWindow && !petWindow.isDestroyed()) {
+      const [x, y] = petWindow.getPosition()
+      savePetConfig({ x, y })
+    }
+  })
+
+  return petWindow
+}
+
+// 显示/隐藏宠物
+export function togglePetWindow(mainWindow: BrowserWindow | null): boolean {
+  if (petWindow && !petWindow.isDestroyed() && petWindow.isVisible()) {
+    petWindow.hide()
+    savePetConfig({ enabled: false })
+    return false
+  } else {
+    createPetWindow(mainWindow)
+    savePetConfig({ enabled: true })
+    return true
+  }
+}
+
+// 显示宠物
+export function showPetWindow(mainWindow: BrowserWindow | null): void {
+  createPetWindow(mainWindow)
+  savePetConfig({ enabled: true })
+}
+
+// 隐藏宠物
+export function hidePetWindow(): void {
+  if (petWindow && !petWindow.isDestroyed()) {
+    petWindow.hide()
+  }
+  savePetConfig({ enabled: false })
+}
+
+// 宠物是否可见
+export function isPetWindowVisible(): boolean {
+  return petWindow !== null && !petWindow.isDestroyed() && petWindow.isVisible()
+}
+
+// 恢复宠物状态
+export function restorePetState(mainWindow: BrowserWindow | null): void {
+  const config = getPetConfig()
+  if (config.enabled) {
+    createPetWindow(mainWindow)
+  }
+}
+
+// IPC 注册
+export function registerDesktopPetIpc(): void {
+  // 拖拽相关变量
+  let dragStartPos: { x: number; y: number } | null = null
+  let windowStartPos: [number, number] | null = null
+
+  ipcMain.handle('desktopPet:getConfig', () => {
+    return { success: true, config: getPetConfig() }
+  })
+
+  // 开始拖拽
+  ipcMain.handle('desktopPet:startDrag', () => {
+    if (petWindow && !petWindow.isDestroyed()) {
+      dragStartPos = screen.getCursorScreenPoint()
+      const pos = petWindow.getPosition()
+      windowStartPos = [pos[0], pos[1]]
+    }
+    return { success: true }
+  })
+
+  // 拖拽移动
+  ipcMain.handle('desktopPet:drag', () => {
+    if (petWindow && !petWindow.isDestroyed() && dragStartPos && windowStartPos) {
+      const currentPos = screen.getCursorScreenPoint()
+      const dx = currentPos.x - dragStartPos.x
+      const dy = currentPos.y - dragStartPos.y
+      petWindow.setPosition(windowStartPos[0] + dx, windowStartPos[1] + dy)
+    }
+    return { success: true }
+  })
+
+  // 结束拖拽
+  ipcMain.handle('desktopPet:endDrag', () => {
+    if (petWindow && !petWindow.isDestroyed()) {
+      const [x, y] = petWindow.getPosition()
+      savePetConfig({ x, y })
+    }
+    dragStartPos = null
+    windowStartPos = null
+    return { success: true }
+  })
+
+  ipcMain.handle('desktopPet:setSize', (_event, size: number) => {
+    savePetConfig({ size })
+    if (petWindow && !petWindow.isDestroyed()) {
+      petWindow.setSize(size, size)
+    }
+    return { success: true }
+  })
+
+  ipcMain.handle('desktopPet:showContextMenu', () => {
+    const menu = Menu.buildFromTemplate([
+      {
+        label: '移动到右下角',
+        click: () => {
+          if (petWindow && !petWindow.isDestroyed()) {
+            const display = screen.getPrimaryDisplay()
+            const { width, height } = display.workAreaSize
+            const config = getPetConfig()
+            const size = config.size || 128
+            petWindow.setPosition(width - size - 20, height - size - 20)
+          }
+        },
+      },
+      {
+        label: '移动到左下角',
+        click: () => {
+          if (petWindow && !petWindow.isDestroyed()) {
+            const display = screen.getPrimaryDisplay()
+            const { height } = display.workAreaSize
+            const config = getPetConfig()
+            const size = config.size || 128
+            petWindow.setPosition(20, height - size - 20)
+          }
+        },
+      },
+      { type: 'separator' },
+      {
+        label: '小 (64px)',
+        click: () => {
+          savePetConfig({ size: 64 })
+          if (petWindow && !petWindow.isDestroyed()) {
+            petWindow.setSize(64, 64)
+          }
+        },
+      },
+      {
+        label: '中 (128px)',
+        click: () => {
+          savePetConfig({ size: 128 })
+          if (petWindow && !petWindow.isDestroyed()) {
+            petWindow.setSize(128, 128)
+          }
+        },
+      },
+      {
+        label: '大 (200px)',
+        click: () => {
+          savePetConfig({ size: 200 })
+          if (petWindow && !petWindow.isDestroyed()) {
+            petWindow.setSize(200, 200)
+          }
+        },
+      },
+      { type: 'separator' },
+      {
+        label: '隐藏宠物',
+        click: () => {
+          hidePetWindow()
+        },
+      },
+    ])
+    menu.popup()
+    return { success: true }
+  })
+
+  ipcMain.handle('desktopPet:toggle', (_event, enable: boolean) => {
+    console.log('[DesktopPet] toggle called, enable:', enable)
+    if (enable) {
+      // 需要从主窗口获取实例，这里通过全局变量传递
+      const { BrowserWindow } = require('electron')
+      const mainWindow = BrowserWindow.getAllWindows().find((w: Electron.BrowserWindow) => !w.webContents.getURL().includes('desktoppet'))
+      console.log('[DesktopPet] Found mainWindow:', !!mainWindow)
+      showPetWindow(mainWindow || null)
+      return { success: true, enabled: true }
+    } else {
+      hidePetWindow()
+      return { success: true, enabled: false }
+    }
+  })
+
+  // 获取自定义动作
+  ipcMain.handle('desktopPet:getCustomActions', () => {
+    return { success: true, actions: getCustomActions() }
+  })
+
+  // 保存自定义动作
+  ipcMain.handle('desktopPet:saveCustomActions', (_event, actions: PetAction[]) => {
+    console.log('[DesktopPet] 保存自定义动作:', actions.length, '个')
+    saveCustomActions(actions)
+    // 更新配置使用自定义动作
+    savePetConfig({ useCustomActions: actions.length > 0 })
+    // 通知桌宠窗口刷新配置
+    if (petWindow && !petWindow.isDestroyed()) {
+      console.log('[DesktopPet] 发送动作更新事件到桌宠窗口')
+      petWindow.webContents.send('desktopPet:actionsUpdated', { actions, useCustomActions: actions.length > 0 })
+    } else {
+      console.log('[DesktopPet] 桌宠窗口不存在，跳过通知')
+    }
+    return { success: true }
+  })
+
+  // 上传图片
+  ipcMain.handle('desktopPet:uploadImage', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [
+        { name: '图片', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'] }
+      ]
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, error: 'cancelled' }
+    }
+
+    const filePath = result.filePaths[0]
+    try {
+      const ext = path.extname(filePath).slice(1).toLowerCase()
+      const mimeType = ext === 'svg' ? 'image/svg+xml' : `image/${ext}`
+      const data = fs.readFileSync(filePath)
+      const base64 = `data:${mimeType};base64,${data.toString('base64')}`
+      return { success: true, dataUrl: base64 }
+    } catch (err) {
+      console.error('[DesktopPet] 读取图片失败:', err)
+      return { success: false, error: '读取图片失败' }
+    }
+  })
+
+  // 保存 base64 图片到本地
+  ipcMain.handle('desktopPet:saveImage', (_event, base64Data: string) => {
+    const filePath = savePetImage(base64Data)
+    if (filePath) {
+      return { success: true, path: filePath }
+    }
+    return { success: false, error: '保存图片失败' }
+  })
+
+  // 检查 rembg 是否可用
+  ipcMain.handle('desktopPet:checkRembg', async () => {
+    const available = await checkRembgAvailable()
+    return { success: true, available }
+  })
+
+  // 在桌宠窗口播放指定动作
+  ipcMain.handle('desktopPet:playAction', (_event, actionName: string) => {
+    if (petWindow && !petWindow.isDestroyed()) {
+      // 获取自定义动作
+      const actions = getCustomActions()
+      const action = actions.find(a => a.name === actionName)
+      if (action) {
+        console.log('[DesktopPet] 在桌宠窗口播放动作:', actionName)
+        petWindow.webContents.send('desktopPet:playAction', action)
+        return { success: true }
+      } else {
+        return { success: false, error: '未找到该动作' }
+      }
+    }
+    return { success: false, error: '桌宠窗口未打开' }
+  })
+
+  // ========== 视频生成相关 ==========
+
+  // 获取 API Key（agiyiya.com）
+  function getVideoApiKey(): string | null {
+    try {
+      const envPath = path.join(app.getPath('home'), '.openclaw', '.env')
+      if (fs.existsSync(envPath)) {
+        const content = fs.readFileSync(envPath, 'utf-8')
+        const match = content.match(/AGIYIYA_API_KEY\s*=\s*(.+)/)
+        if (match) {
+          return match[1].trim().replace(/^["']|["']$/g, '')
+        }
+      }
+    } catch (err) {
+      console.error('[DesktopPet] 读取 API Key 失败:', err)
+    }
+    return null
+  }
+
+  // 生成视频（图生视频）- 使用 agiyiya.com API
+  ipcMain.handle('desktopPet:generateVideo', async (_event, params: { imageDataUrl: string; prompt: string; duration?: number }) => {
+    const apiKey = getVideoApiKey()
+    if (!apiKey) {
+      return { success: false, error: '未配置 AGIYIYA_API_KEY，请在设置中添加环境变量' }
+    }
+
+    const { imageDataUrl, prompt, duration = 2 } = params
+    const baseUrl = 'https://agiyiya.com'
+
+    try {
+      // 1. 先上传图片获取 URL
+      console.log('[DesktopPet] 正在上传图片...')
+      const uploadResult = await new Promise<{ success: boolean; url?: string; error?: string }>((resolve) => {
+        // 解析 base64 数据
+        const matches = imageDataUrl.match(/^data:image\/(\w+);base64,(.+)$/)
+        if (!matches) {
+          resolve({ success: false, error: '无效的图片数据格式' })
+          return
+        }
+
+        const ext = matches[1]
+        const base64Data = matches[2]
+        const buffer = Buffer.from(base64Data, 'base64')
+
+        // 构建 multipart/form-data 请求
+        const boundary = `----FormBoundary${Date.now()}`
+        const filename = `image.${ext}`
+        const mimeType = ext === 'svg' ? 'image/svg+xml' : `image/${ext}`
+
+        const formDataParts = [
+          `--${boundary}`,
+          `Content-Disposition: form-data; name="file"; filename="${filename}"`,
+          `Content-Type: ${mimeType}`,
+          '',
+        ]
+        const footer = `\r\n--${boundary}--\r\n`
+
+        const headerBuffer = Buffer.from(formDataParts.join('\r\n') + '\r\n', 'utf8')
+        const footerBuffer = Buffer.from(footer, 'utf8')
+        const totalLength = headerBuffer.length + buffer.length + footerBuffer.length
+
+        const req = https.request(
+          `${baseUrl}/api/ai/upload`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': `multipart/form-data; boundary=${boundary}`,
+              'Content-Length': totalLength,
+            },
+          },
+          (res) => {
+            let body = ''
+            res.on('data', (chunk) => (body += chunk))
+            res.on('end', () => {
+              try {
+                const data = JSON.parse(body)
+                if (data.success && (data.data?.url || data.data?.signed_url)) {
+                  resolve({ success: true, url: data.data.signed_url || data.data.url })
+                } else {
+                  resolve({ success: false, error: data.message || data.detail || '上传失败' })
+                }
+              } catch {
+                resolve({ success: false, error: '解析上传响应失败: ' + body.substring(0, 200) })
+              }
+            })
+          }
+        )
+        req.on('error', (err) => resolve({ success: false, error: err.message }))
+
+        // 分段写入
+        req.write(headerBuffer)
+        req.write(buffer)
+        req.write(footerBuffer)
+        req.end()
+      })
+
+      if (!uploadResult.success || !uploadResult.url) {
+        return { success: false, error: `图片上传失败: ${uploadResult.error}` }
+      }
+
+      const imageUrl = uploadResult.url
+      console.log('[DesktopPet] 图片上传成功:', imageUrl)
+
+      // 2. 提交视频生成任务
+      const submitPayload = JSON.stringify({
+        model: 'doubao-seedance-1-0-pro-fast',
+        prompt: prompt || '角色做简单的呼吸动作，身体轻微起伏',
+        image_urls: [imageUrl],
+        duration: Math.min(Math.max(duration, 1), 10), // 限制1-10秒
+      })
+
+      const submitResult = await new Promise<{ success: boolean; data?: unknown; error?: string }>((resolve) => {
+        const req = https.request(
+          `${baseUrl}/api/video/generate`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+          },
+          (res) => {
+            let body = ''
+            res.on('data', (chunk) => (body += chunk))
+            res.on('end', () => {
+              try {
+                const data = JSON.parse(body)
+                if (data.code && data.code !== 200 && !data.data) {
+                  resolve({ success: false, error: data.error?.message || data.message || JSON.stringify(data) })
+                } else {
+                  resolve({ success: true, data })
+                }
+              } catch {
+                resolve({ success: false, error: '解析响应失败' })
+              }
+            })
+          }
+        )
+        req.on('error', (err) => resolve({ success: false, error: err.message }))
+        req.write(submitPayload)
+        req.end()
+      })
+
+      if (!submitResult.success) {
+        return { success: false, error: submitResult.error }
+      }
+
+      const responseData = submitResult.data as { data?: { tasks?: Array<{ task_id: string }> } }
+      const tasks = responseData?.data?.tasks || []
+      if (tasks.length === 0) {
+        return { success: false, error: 'API 未返回任务 ID' }
+      }
+
+      const taskId = tasks[0].task_id
+      console.log('[DesktopPet] 视频任务已提交:', taskId)
+
+      // 2. 轮询任务状态
+      const pollInterval = 3000
+      const pollTimeout = 600000 // 10分钟
+      const startTime = Date.now()
+
+      while (Date.now() - startTime < pollTimeout) {
+        await new Promise((r) => setTimeout(r, pollInterval))
+
+        const taskResult = await new Promise<{ success: boolean; data?: unknown; error?: string }>((resolve) => {
+          const req = https.request(
+            `${baseUrl}/api/video/task/${taskId}`,
+            {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${apiKey}`,
+              },
+            },
+            (res) => {
+              let body = ''
+              res.on('data', (chunk) => (body += chunk))
+              res.on('end', () => {
+                try {
+                  const data = JSON.parse(body)
+                  resolve({ success: true, data })
+                } catch {
+                  resolve({ success: false, error: '解析响应失败' })
+                }
+              })
+            }
+          )
+          req.on('error', (err) => resolve({ success: false, error: err.message }))
+          req.end()
+        })
+
+        if (!taskResult.success) {
+          return { success: false, error: taskResult.error }
+        }
+
+        // 解析响应数据
+        interface TaskResponse {
+          success?: boolean
+          data?: {
+            id?: string
+            status?: string
+            progress?: number
+            result?: {
+              videos?: Array<{ url?: string | string[] }>
+              thumbnail_url?: string
+            }
+          }
+        }
+        const taskData = taskResult.data as TaskResponse
+        const data = taskData?.data
+        const status = data?.status?.toLowerCase() || ''
+
+        console.log('[DesktopPet] 任务状态:', status, '进度:', data?.progress)
+
+        if (status === 'completed') {
+          // 提取视频 URL
+          const videos = data?.result?.videos || []
+          if (videos.length === 0) {
+            return { success: false, error: '视频生成完成但未返回视频 URL' }
+          }
+
+          let videoUrl = videos[0].url
+          if (Array.isArray(videoUrl)) {
+            videoUrl = videoUrl[0]
+          }
+
+          if (!videoUrl) {
+            return { success: false, error: '视频 URL 为空' }
+          }
+
+          console.log('[DesktopPet] 视频URL:', videoUrl)
+
+          // 3. 下载视频
+          const videoBuffer = await new Promise<Buffer | null>((resolve) => {
+            https.get(videoUrl, (res) => {
+              const chunks: Buffer[] = []
+              res.on('data', (chunk) => chunks.push(chunk))
+              res.on('end', () => resolve(Buffer.concat(chunks)))
+              res.on('error', () => resolve(null))
+            }).on('error', () => resolve(null))
+          })
+
+          if (!videoBuffer) {
+            return { success: false, error: '视频下载失败' }
+          }
+
+          // 4. 保存视频并转换为 GIF
+          const imagesDir = getPetImagesDir()
+          const videoPath = path.join(imagesDir, `video-${taskId}.mp4`)
+          fs.writeFileSync(videoPath, videoBuffer)
+
+          // 转换为 GIF
+          const gifPath = path.join(imagesDir, `pet-${taskId}.gif`)
+          const gifResult = await convertVideoToGif(videoPath, gifPath)
+
+          // 删除临时视频文件
+          if (fs.existsSync(videoPath)) {
+            fs.unlinkSync(videoPath)
+          }
+
+          if (gifResult.success && gifResult.path) {
+            // 5. 去除背景（使用 rembg）
+            const transparentGifPath = path.join(imagesDir, `pet-transparent-${taskId}.gif`)
+            const bgRemoveResult = await removeGifBackground(gifResult.path, transparentGifPath)
+
+            let finalGifPath = gifResult.path
+
+            if (bgRemoveResult.success && bgRemoveResult.path) {
+              // 背景去除成功，使用透明 GIF
+              finalGifPath = bgRemoveResult.path
+              // 删除原始 GIF
+              if (fs.existsSync(gifResult.path)) {
+                fs.unlinkSync(gifResult.path)
+              }
+              console.log('[DesktopPet] 背景去除成功')
+            } else {
+              // 背景去除失败，使用原始 GIF
+              console.log('[DesktopPet] 背景去除失败，使用原始 GIF:', bgRemoveResult.error)
+            }
+
+            // 读取 GIF 转为 base64
+            const gifData = fs.readFileSync(finalGifPath)
+            const gifBase64 = `data:image/gif;base64,${gifData.toString('base64')}`
+            return { success: true, gifPath: finalGifPath, gifDataUrl: gifBase64 }
+          } else {
+            return { success: false, error: gifResult.error || 'GIF 转换失败' }
+          }
+        } else if (status === 'failed' || status === 'cancelled') {
+          return { success: false, error: `任务${status}` }
+        }
+      }
+
+      return { success: false, error: '视频生成超时' }
+    } catch (err) {
+      console.error('[DesktopPet] 视频生成失败:', err)
+      return { success: false, error: String(err) }
+    }
+  })
+}
+
+// 视频转 GIF（使用 ffmpeg）
+async function convertVideoToGif(videoPath: string, outputPath: string): Promise<{ success: boolean; path?: string; error?: string }> {
+  return new Promise((resolve) => {
+    // 生成调色板以提高 GIF 质量
+    const palettePath = videoPath.replace('.mp4', '-palette.png')
+
+    // 第一步：生成调色板
+    const paletteProcess = spawn('ffmpeg', [
+      '-i', videoPath,
+      '-vf', 'fps=10,scale=128:-1:flags=lanczos,palettegen',
+      '-y',
+      palettePath,
+    ])
+
+    paletteProcess.on('close', (paletteCode) => {
+      if (paletteCode !== 0) {
+        // 如果调色板生成失败，尝试直接转换
+        console.log('[DesktopPet] 调色板生成失败，尝试直接转换')
+        const directProcess = spawn('ffmpeg', [
+          '-i', videoPath,
+          '-vf', 'fps=10,scale=128:-1:flags=lanczos',
+          '-y',
+          outputPath,
+        ])
+        directProcess.on('close', (code) => {
+          if (code === 0 && fs.existsSync(outputPath)) {
+            resolve({ success: true, path: outputPath })
+          } else {
+            resolve({ success: false, error: 'FFmpeg 转换失败，请确保已安装 ffmpeg' })
+          }
+        })
+        return
+      }
+
+      // 第二步：使用调色板生成 GIF
+      const gifProcess = spawn('ffmpeg', [
+        '-i', videoPath,
+        '-i', palettePath,
+        '-lavfi', 'fps=10,scale=128:-1:flags=lanczos[x];[x][1:v]paletteuse',
+        '-y',
+        outputPath,
+      ])
+
+      gifProcess.on('close', (code) => {
+        // 清理调色板文件
+        if (fs.existsSync(palettePath)) {
+          fs.unlinkSync(palettePath)
+        }
+
+        if (code === 0 && fs.existsSync(outputPath)) {
+          resolve({ success: true, path: outputPath })
+        } else {
+          resolve({ success: false, error: 'FFmpeg 转换失败' })
+        }
+      })
+
+      gifProcess.on('error', (err) => {
+        console.error('[DesktopPet] FFmpeg 进程错误:', err)
+        // 清理调色板文件
+        if (fs.existsSync(palettePath)) {
+          fs.unlinkSync(palettePath)
+        }
+        resolve({ success: false, error: 'FFmpeg 未安装或执行失败' })
+      })
+    })
+
+    paletteProcess.on('error', (err) => {
+      console.error('[DesktopPet] FFmpeg 进程错误:', err)
+      resolve({ success: false, error: 'FFmpeg 未安装或执行失败，请安装 ffmpeg 并添加到 PATH' })
+    })
+  })
+}
+
+// 去除 GIF 背景（使用 rembg）
+async function removeGifBackground(gifPath: string, outputPath: string): Promise<{ success: boolean; path?: string; error?: string }> {
+  const tempDir = path.join(path.dirname(gifPath), `frames-${Date.now()}`)
+
+  try {
+    // 1. 创建临时目录
+    fs.mkdirSync(tempDir, { recursive: true })
+
+    // 2. 用 ffmpeg 拆帧
+    const framesPattern = path.join(tempDir, 'frame_%04d.png')
+    await new Promise<void>((resolve, reject) => {
+      const extractProcess = spawn('ffmpeg', [
+        '-i', gifPath,
+        '-vsync', '0',
+        framesPattern,
+      ])
+      extractProcess.on('close', (code) => {
+        if (code === 0) resolve()
+        else reject(new Error(`拆帧失败，退出码: ${code}`))
+      })
+      extractProcess.on('error', reject)
+    })
+
+    // 3. 获取所有帧文件
+    const frameFiles = fs.readdirSync(tempDir)
+      .filter(f => f.startsWith('frame_') && f.endsWith('.png'))
+      .sort()
+
+    if (frameFiles.length === 0) {
+      return { success: false, error: '拆帧失败，未生成任何帧' }
+    }
+
+    console.log(`[DesktopPet] 拆帧完成，共 ${frameFiles.length} 帧`)
+
+    // 4. 用 rembg 处理每帧
+    const processedDir = path.join(tempDir, 'processed')
+    fs.mkdirSync(processedDir, { recursive: true })
+
+    for (let i = 0; i < frameFiles.length; i++) {
+      const frameFile = frameFiles[i]
+      const inputPath = path.join(tempDir, frameFile)
+      const outputFrameFile = `frame_${String(i).padStart(4, '0')}.png`
+      const outputFramePath = path.join(processedDir, outputFrameFile)
+
+      // 调用 rembg 库去除背景（使用 birefnet-general 模型，对白色头发等细节处理更好）
+      await new Promise<void>((resolve) => {
+        const pythonScript = `
+from rembg import remove, new_session
+from PIL import Image
+import sys
+
+try:
+    input_path = r"${inputPath.replace(/\\/g, '\\')}"
+    output_path = r"${outputFramePath.replace(/\\/g, '\\')}"
+
+    with open(input_path, 'rb') as f:
+        input_data = f.read()
+
+    # 使用 birefnet-general 模型，对白色头发等细节处理更好
+    session = new_session('birefnet-general')
+    output_data = remove(input_data, session=session)
+
+    with open(output_path, 'wb') as f:
+        f.write(output_data)
+
+    print("OK")
+except Exception as e:
+    print(f"Error: {e}", file=sys.stderr)
+    sys.exit(1)
+`
+        const rembgProcess = spawn('python', ['-c', pythonScript])
+        let stderr = ''
+        rembgProcess.stderr?.on('data', (data) => {
+          stderr += data.toString()
+        })
+        rembgProcess.on('close', (code) => {
+          if (code === 0) resolve()
+          else {
+            console.error(`[DesktopPet] rembg 处理帧 ${frameFile} 失败:`, stderr)
+            // 如果 rembg 失败，复制原帧（保持流程继续）
+            try {
+              fs.copyFileSync(inputPath, outputFramePath)
+            } catch {}
+            resolve()
+          }
+        })
+        rembgProcess.on('error', (err) => {
+          console.error(`[DesktopPet] rembg 进程错误:`, err)
+          // 复制原帧继续
+          try {
+            fs.copyFileSync(inputPath, outputFramePath)
+          } catch {}
+          resolve()
+        })
+      })
+    }
+
+    console.log(`[DesktopPet] rembg 处理完成`)
+
+    // 5. 重新合成透明 GIF
+    const processedPattern = path.join(processedDir, 'frame_%04d.png')
+    await new Promise<void>((resolve, reject) => {
+      const gifProcess = spawn('ffmpeg', [
+        '-framerate', '10',
+        '-i', processedPattern,
+        '-lavfi', 'palettegen=reserve_transparent=1[p];[0:v][p]paletteuse=alpha_threshold=128',
+        '-loop', '0',
+        '-y',
+        outputPath,
+      ])
+      let stderr = ''
+      gifProcess.stderr?.on('data', (data) => {
+        stderr += data.toString()
+      })
+      gifProcess.on('close', (code) => {
+        if (code === 0) resolve()
+        else reject(new Error(`合成 GIF 失败: ${stderr}`))
+      })
+      gifProcess.on('error', reject)
+    })
+
+    // 6. 清理临时目录
+    fs.rmSync(tempDir, { recursive: true, force: true })
+
+    if (fs.existsSync(outputPath)) {
+      console.log(`[DesktopPet] 透明 GIF 生成成功: ${outputPath}`)
+      return { success: true, path: outputPath }
+    } else {
+      return { success: false, error: 'GIF 合成失败' }
+    }
+  } catch (err) {
+    // 清理临时目录
+    if (fs.existsSync(tempDir)) {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+    console.error('[DesktopPet] 去除背景失败:', err)
+    return { success: false, error: `去除背景失败: ${err}` }
+  }
+}
+
+// 检查 rembg 是否可用
+async function checkRembgAvailable(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const checkProcess = spawn('python', ['-c', 'from rembg import remove, new_session; new_session("birefnet-general"); print("OK")'])
+    let stdout = ''
+    checkProcess.stdout?.on('data', (data) => {
+      stdout += data.toString()
+    })
+    checkProcess.on('close', (code) => {
+      resolve(code === 0 && stdout.includes('OK'))
+    })
+    checkProcess.on('error', () => {
+      resolve(false)
+    })
+  })
+}

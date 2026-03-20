@@ -148,6 +148,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('quickpaste:show', wrapped)
     },
   },
+  desktopPet: {
+    getConfig: () => ipcRenderer.invoke('desktopPet:getConfig'),
+    setSize: (size: number) => ipcRenderer.invoke('desktopPet:setSize', size),
+    showContextMenu: () => ipcRenderer.invoke('desktopPet:showContextMenu'),
+    toggle: (enable: boolean) => ipcRenderer.invoke('desktopPet:toggle', enable),
+    startDrag: () => ipcRenderer.invoke('desktopPet:startDrag'),
+    drag: () => ipcRenderer.invoke('desktopPet:drag'),
+    endDrag: () => ipcRenderer.invoke('desktopPet:endDrag'),
+    getCustomActions: () => ipcRenderer.invoke('desktopPet:getCustomActions'),
+    saveCustomActions: (actions: unknown[]) => ipcRenderer.invoke('desktopPet:saveCustomActions', actions),
+    uploadImage: () => ipcRenderer.invoke('desktopPet:uploadImage'),
+    saveImage: (base64Data: string) => ipcRenderer.invoke('desktopPet:saveImage', base64Data),
+    generateVideo: (params: { imageDataUrl: string; prompt?: string; duration?: number }) =>
+      ipcRenderer.invoke('desktopPet:generateVideo', params),
+    checkRembg: () => ipcRenderer.invoke('desktopPet:checkRembg'),
+    playAction: (actionName: string) => ipcRenderer.invoke('desktopPet:playAction', actionName),
+    onActionsUpdated: (callback: (data: { actions: Array<{ name: string; frames: string[]; duration: number; repeat?: number }>; useCustomActions: boolean }) => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, data: { actions: Array<{ name: string; frames: string[]; duration: number; repeat?: number }>; useCustomActions: boolean }) => callback(data)
+      ipcRenderer.on('desktopPet:actionsUpdated', wrapped)
+      return () => ipcRenderer.removeListener('desktopPet:actionsUpdated', wrapped)
+    },
+    onPlayAction: (callback: (action: { name: string; frames: string[]; duration: number }) => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, action: { name: string; frames: string[]; duration: number }) => callback(action)
+      ipcRenderer.on('desktopPet:playAction', wrapped)
+      return () => ipcRenderer.removeListener('desktopPet:playAction', wrapped)
+    },
+  },
   lifecycle: {
     onStep: (callback: (data: { phase: 'starting' | 'stopping'; step: string }) => void) => {
       const wrapped = (_event: Electron.IpcRendererEvent, data: { phase: 'starting' | 'stopping'; step: string }) => callback(data)

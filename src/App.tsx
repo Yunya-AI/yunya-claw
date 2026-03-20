@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import TitleBar from '@/components/layout/TitleBar'
 import Sidebar, { type PageKey } from '@/components/layout/Sidebar'
 import DashboardPage from '@/pages/DashboardPage'
@@ -12,6 +12,7 @@ import IntegrationsPage from '@/pages/IntegrationsPage'
 import CronPage from '@/pages/CronPage'
 import ClipboardPage from '@/pages/ClipboardPage'
 import QuickPastePage from '@/pages/QuickPastePage'
+import DesktopPetPage from '@/pages/DesktopPetPage'
 import { GatewayProvider } from '@/contexts/GatewayContext'
 import { AgentProvider } from '@/contexts/AgentContext'
 import { AppearanceProvider } from '@/contexts/AppearanceContext'
@@ -30,7 +31,9 @@ function KeepAlive({ active, children }: { active: boolean; children: React.Reac
 }
 
 // 检查是否是快捷粘贴窗口模式
-const isQuickPasteMode = new URLSearchParams(window.location.search).get('mode') === 'quickpaste'
+const urlParams = new URLSearchParams(window.location.search)
+const isQuickPasteMode = urlParams.get('mode') === 'quickpaste'
+const isDesktopPetMode = urlParams.get('mode') === 'desktoppet'
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<PageKey>('agents')
@@ -38,8 +41,23 @@ export default function App() {
   const [configVersion, setConfigVersion] = useState(0)
   const handleConfigSaved = useCallback(() => setConfigVersion(v => v + 1), [])
 
+  // 桌宠模式：设置透明背景
+  useEffect(() => {
+    if (isDesktopPetMode) {
+      document.body.classList.add('desktop-pet-mode')
+    }
+  }, [])
+
   if (isQuickPasteMode) {
     return <QuickPastePage />
+  }
+
+  if (isDesktopPetMode) {
+    return (
+      <ErrorBoundary>
+        <DesktopPetPage />
+      </ErrorBoundary>
+    )
   }
 
   return (
