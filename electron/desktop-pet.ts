@@ -485,11 +485,86 @@ export function registerDesktopPetIpc(): void {
     return null
   }
 
+  // 支持的比例
+  const SUPPORTED_ASPECT_RATIOS = ['16:9', '9:16', '4:3', '3:4', '1:1'] as const
+  type AspectRatio = typeof SUPPORTED_ASPECT_RATIOS[number]
+
+  // 根据图片尺寸计算最接近的比例
+  function getClosestAspectRatio(width: number, height: number): AspectRatio {
+    const ratio = width / height
+
+    const ratioValues: Record<AspectRatio, number> = {
+      '16:9': 16 / 9,
+      '9:16': 9 / 16,
+      '4:3': 4 / 3,
+      '3:4': 3 / 4,
+      '1:1': 1,
+    }
+
+    let closestRatio: AspectRatio = '1:1'
+    let minDiff = Math.abs(ratio - 1)
+
+    for (const [ar, value] of Object.entries(ratioValues)) {
+      const diff = Math.abs(ratio - value)
+      if (diff < minDiff) {
+        minDiff = diff
+        closestRatio = ar as AspectRatio
+      }
+    }
+
+    return closestRatio
+  }
+
+  // 从 base64 图片数据获取尺寸
+  function getImageDimensions(base64Data: string): { width: number; height: number } | null {
+    try {
+      const buffer = Buffer.from(base64Data, 'base64')
+
+      // PNG: 前8字节是签名，然后是 IHDR chunk
+      if (buffer[0] === 0x89 && buffer[1] === 0x50) {
+        const width = buffer.readUInt32BE(16)
+        const height = buffer.readUInt32BE(20)
+        return { width, height }
+      }
+
+      // JPEG: 查找 SOF0 标记
+      if (buffer[0] === 0xff && buffer[1] === 0xd8) {
+        let offset = 2
+        while (offset < buffer.length - 4) {
+          if (buffer[offset] !== 0xff) {
+            offset++
+            continue
+          }
+          const marker = buffer[offset + 1]
+          // SOF0, SOF1, SOF2 标记
+          if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
+            const height = buffer.readUInt16BE(offset + 5)
+            const width = buffer.readUInt16BE(offset + 7)
+            return { width, height }
+          }
+          offset += 2 + buffer.readUInt16BE(offset + 2)
+        }
+      }
+
+      // WebP: RIFF 头 + VP8
+      if (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46) {
+        const width = buffer.readUInt16LE(26)
+        const height = buffer.readUInt16LE(28)
+        return { width, height }
+      }
+
+      return null
+    } catch {
+      return null
+    }
+  }
+
   // 生成绿色背景图片（调用图片生成 API）
   async function generateGreenBackgroundImage(
     baseUrl: string,
     apiKey: string,
-    imageUrl: string
+    imageUrl: string,
+    aspectRatio: AspectRatio
   ): Promise<{ success: boolean; url?: string; error?: string }> {
     console.log('[DesktopPet] 正在生成绿色背景图片...')
 
@@ -497,7 +572,7 @@ export function registerDesktopPetIpc(): void {
     const submitPayload = JSON.stringify({
       prompt: '将图片背景变成纯绿色(#00FF00)，保持主体内容不变',
       model: 'gemini-3-pro-image-preview',
-      size: '1:1',
+      aspect_ratio: aspectRatio,
       n: 1,
       resolution: '1K',
       image_urls: [imageUrl],
@@ -620,30 +695,35 @@ export function registerDesktopPetIpc(): void {
   }
 
   // 生成视频（图生视频）- 使用 agiyiya.com API
-  ipcMain.handle('desktopPet:generateVideo', async (_event, params: { imageDataUrl: string; prompt: string; duration?: number }) => {
+  ipcMain.handle('desktopPet:generateVideo', async (_event, params: { imageDataUrl: string; prompt: string; duration?: number; aspectRatio?: string }) => {
     const apiKey = getVideoApiKey()
     if (!apiKey) {
       return { success: false, error: '未配置 AGIYIYA_API_KEY，请在设置中添加环境变量' }
     }
 
-    const { imageDataUrl, prompt, duration = 2 } = params
+    const { imageDataUrl, prompt, duration = 2, aspectRatio: providedAspectRatio } = params
     const baseUrl = 'https://agiyiya.com'
+
+    // 解析 base64 获取图片尺寸
+    const matches = imageDataUrl.match(/^data:image\/(\w+);base64,(.+)$/)
+    if (!matches) {
+      return { success: false, error: '无效的图片数据格式' }
+    }
+    const base64Data = matches[2]
+    const dimensions = getImageDimensions(base64Data)
+    // 优先使用前端传入的比例，否则从图片尺寸计算
+    const aspectRatio = providedAspectRatio || (dimensions
+      ? getClosestAspectRatio(dimensions.width, dimensions.height)
+      : '1:1')
+    console.log('[DesktopPet] 图片尺寸:', dimensions, '比例:', aspectRatio)
 
     try {
       // 1. 先上传图片获取 URL
       console.log('[DesktopPet] 正在上传图片...')
+      const ext = matches[1]
+      const buffer = Buffer.from(base64Data, 'base64')
+
       const uploadResult = await new Promise<{ success: boolean; url?: string; error?: string }>((resolve) => {
-        // 解析 base64 数据
-        const matches = imageDataUrl.match(/^data:image\/(\w+);base64,(.+)$/)
-        if (!matches) {
-          resolve({ success: false, error: '无效的图片数据格式' })
-          return
-        }
-
-        const ext = matches[1]
-        const base64Data = matches[2]
-        const buffer = Buffer.from(base64Data, 'base64')
-
         // 构建 multipart/form-data 请求
         const boundary = `----FormBoundary${Date.now()}`
         const filename = `image.${ext}`
@@ -705,7 +785,7 @@ export function registerDesktopPetIpc(): void {
       console.log('[DesktopPet] 图片上传成功:', imageUrl)
 
       // 2. 生成绿色背景图片
-      const greenBgResult = await generateGreenBackgroundImage(baseUrl, apiKey, imageUrl)
+      const greenBgResult = await generateGreenBackgroundImage(baseUrl, apiKey, imageUrl, aspectRatio)
       let finalImageUrl = imageUrl
 
       if (greenBgResult.success && greenBgResult.url) {
@@ -721,6 +801,8 @@ export function registerDesktopPetIpc(): void {
         prompt: prompt || '角色做简单的呼吸动作，身体轻微起伏',
         image_urls: [finalImageUrl],
         duration: Math.min(Math.max(duration, 1), 10), // 限制1-10秒
+        resolution: '1080p',
+        aspect_ratio: aspectRatio,
       })
 
       const submitResult = await new Promise<{ success: boolean; data?: unknown; error?: string }>((resolve) => {

@@ -28,6 +28,46 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
   const [sourceImage, setSourceImage] = useState<string | null>(null)
   const [actionPrompts, setActionPrompts] = useState<Array<{ prompt: string; duration: number }>>([{ prompt: '呼吸', duration: 2 }])
   const [generateProgress, setGenerateProgress] = useState<{ current: number; total: number; currentPrompt: string } | null>(null)
+  const [aspectRatio, setAspectRatio] = useState<string>('1:1')
+  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null)
+
+  // 支持的比例
+  const SUPPORTED_ASPECT_RATIOS = ['16:9', '9:16', '4:3', '3:4', '1:1']
+
+  // 根据图片尺寸计算最接近的比例
+  const getClosestAspectRatio = (width: number, height: number): string => {
+    const ratio = width / height
+    const ratioValues: Record<string, number> = {
+      '16:9': 16 / 9,
+      '9:16': 9 / 16,
+      '4:3': 4 / 3,
+      '3:4': 3 / 4,
+      '1:1': 1,
+    }
+
+    let closestRatio = '1:1'
+    let minDiff = Math.abs(ratio - 1)
+
+    for (const [ar, value] of Object.entries(ratioValues)) {
+      const diff = Math.abs(ratio - value)
+      if (diff < minDiff) {
+        minDiff = diff
+        closestRatio = ar
+      }
+    }
+
+    return closestRatio
+  }
+
+  // 从 base64 图片获取尺寸
+  const getImageDimensions = (dataUrl: string): { width: number; height: number } | null => {
+    const img = new Image()
+    img.src = dataUrl
+    if (img.naturalWidth && img.naturalHeight) {
+      return { width: img.naturalWidth, height: img.naturalHeight }
+    }
+    return null
+  }
 
   // 添加动作描述
   const handleAddPrompt = () => {
@@ -267,8 +307,25 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
                 if (!file) return
                 const reader = new FileReader()
                 reader.onload = () => {
-                  setSourceImage(reader.result as string)
+                  const dataUrl = reader.result as string
+                  setSourceImage(dataUrl)
                   setGenerateError(null)
+                  // 获取图片尺寸并计算比例
+                  const img = new window.Image()
+                  img.onload = () => {
+                    console.log('[DesktopPetConfig] naturalWidth:', img.naturalWidth, 'naturalHeight:', img.naturalHeight)
+                    if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                      const dimensions = { width: img.naturalWidth, height: img.naturalHeight }
+                      setImageDimensions(dimensions)
+                      const ratio = getClosestAspectRatio(dimensions.width, dimensions.height)
+                      setAspectRatio(ratio)
+                      console.log('[DesktopPetConfig] 图片尺寸:', dimensions, '比例:', ratio)
+                    }
+                  }
+                  img.onerror = () => {
+                    console.error('[DesktopPetConfig] 图片加载失败')
+                  }
+                  img.src = dataUrl
                 }
                 reader.readAsDataURL(file)
               }}
@@ -277,14 +334,30 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs text-muted-foreground">动作描述</label>
-                  <button
-                    onClick={handleAddPrompt}
-                    disabled={generating}
-                    className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 disabled:opacity-50"
-                  >
-                    <Plus className="w-3 h-3" />
-                    添加动作
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-muted-foreground">比例</span>
+                      <select
+                        value={aspectRatio}
+                        onChange={(e) => setAspectRatio(e.target.value)}
+                        className="h-6 bg-input border border-border rounded px-1.5 text-xs"
+                        disabled={generating}
+                        title={imageDimensions ? `原图尺寸: ${imageDimensions.width}x${imageDimensions.height}` : ''}
+                      >
+                        {SUPPORTED_ASPECT_RATIOS.map(r => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <button
+                      onClick={handleAddPrompt}
+                      disabled={generating}
+                      className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 disabled:opacity-50"
+                    >
+                      <Plus className="w-3 h-3" />
+                      添加动作
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   {actionPrompts.map((item, index) => (
@@ -352,6 +425,7 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
                         imageDataUrl: sourceImage,
                         prompt: prompt,
                         duration: item.duration,
+                        aspectRatio: aspectRatio,
                       })
 
                       if (res?.success && res.gifDataUrl) {

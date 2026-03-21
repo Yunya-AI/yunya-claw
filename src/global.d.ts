@@ -227,7 +227,7 @@ interface ElectronAPI {
     saveCustomActions: (actions: PetAction[]) => Promise<{ success: boolean; error?: string }>
     uploadImage: () => Promise<{ success: boolean; dataUrl?: string; error?: string }>
     saveImage: (base64Data: string) => Promise<{ success: boolean; path?: string; error?: string }>
-    generateVideo: (params: { imageDataUrl: string; prompt?: string; duration?: number }) => Promise<{ success: boolean; gifPath?: string; gifDataUrl?: string; error?: string }>
+    generateVideo: (params: { imageDataUrl: string; prompt?: string; duration?: number; aspectRatio?: string }) => Promise<{ success: boolean; gifPath?: string; gifDataUrl?: string; error?: string }>
     checkRembg: () => Promise<{ success: boolean; available: boolean }>
     playAction: (actionName: string) => Promise<{ success: boolean; error?: string }>
     onActionsUpdated: (callback: (data: { actions: Array<{ name: string; frames: string[]; duration: number; repeat?: number }>; useCustomActions: boolean }) => void) => () => void
