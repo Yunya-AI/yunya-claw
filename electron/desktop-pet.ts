@@ -485,6 +485,140 @@ export function registerDesktopPetIpc(): void {
     return null
   }
 
+  // 生成绿色背景图片（调用图片生成 API）
+  async function generateGreenBackgroundImage(
+    baseUrl: string,
+    apiKey: string,
+    imageUrl: string
+  ): Promise<{ success: boolean; url?: string; error?: string }> {
+    console.log('[DesktopPet] 正在生成绿色背景图片...')
+
+    // 1. 提交图片生成任务
+    const submitPayload = JSON.stringify({
+      prompt: '将图片背景变成纯绿色(#00FF00)，保持主体内容不变',
+      model: 'gemini-3-pro-image-preview',
+      size: '1:1',
+      n: 1,
+      resolution: '1K',
+      image_urls: [imageUrl],
+    })
+
+    const submitResult = await new Promise<{ success: boolean; data?: unknown; error?: string }>((resolve) => {
+      const req = https.request(
+        `${baseUrl}/api/image/generate`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+        },
+        (res) => {
+          let body = ''
+          res.on('data', (chunk) => (body += chunk))
+          res.on('end', () => {
+            try {
+              const data = JSON.parse(body)
+              if (data.code && data.code !== 200 && !data.data) {
+                resolve({ success: false, error: data.error?.message || data.message || JSON.stringify(data) })
+              } else {
+                resolve({ success: true, data })
+              }
+            } catch {
+              resolve({ success: false, error: '解析响应失败' })
+            }
+          })
+        }
+      )
+      req.on('error', (err) => resolve({ success: false, error: err.message }))
+      req.write(submitPayload)
+      req.end()
+    })
+
+    if (!submitResult.success) {
+      return { success: false, error: submitResult.error }
+    }
+
+    // 打印完整响应用于调试
+    console.log('[DesktopPet] 图片生成 API 原始响应:', JSON.stringify(submitResult.data))
+
+    const responseData = submitResult.data as { data?: { tasks?: Array<{ task_id: string }> } }
+    const tasks = responseData?.data?.tasks || []
+    if (tasks.length === 0) {
+      return { success: false, error: '图片生成 API 未返回任务 ID' }
+    }
+
+    const taskId = tasks[0].task_id
+    console.log('[DesktopPet] 图片生成任务已提交:', taskId)
+
+    // 2. 轮询任务状态
+    const pollInterval = 3000
+    const pollTimeout = 120000 // 2分钟
+    const startTime = Date.now()
+
+    while (Date.now() - startTime < pollTimeout) {
+      await new Promise((r) => setTimeout(r, pollInterval))
+
+      const taskResult = await new Promise<{ success: boolean; data?: unknown; error?: string }>((resolve) => {
+        const req = https.request(
+          `${baseUrl}/api/image/task/${taskId}`,
+          {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+            },
+          },
+          (res) => {
+            let body = ''
+            res.on('data', (chunk) => (body += chunk))
+            res.on('end', () => {
+              try {
+                const data = JSON.parse(body)
+                resolve({ success: true, data })
+              } catch {
+                resolve({ success: false, error: '解析响应失败' })
+              }
+            })
+          }
+        )
+        req.on('error', (err) => resolve({ success: false, error: err.message }))
+        req.end()
+      })
+
+      if (!taskResult.success) {
+        return { success: false, error: taskResult.error }
+      }
+
+      interface ImageTaskResponse {
+        data?: {
+          status?: string
+          result?: {
+            images?: Array<{ url?: string }>
+          }
+        }
+      }
+      const taskData = taskResult.data as ImageTaskResponse
+      const status = taskData?.data?.status?.toLowerCase() || ''
+
+      console.log('[DesktopPet] 图片生成任务状态:', status)
+
+      if (status === 'completed' || status === 'succeeded') {
+        const images = taskData?.data?.result?.images || []
+        if (images.length > 0 && images[0].url) {
+          // url 可能是字符串或数组
+          const url = Array.isArray(images[0].url) ? images[0].url[0] : images[0].url
+          console.log('[DesktopPet] 绿色背景图片生成成功:', url)
+          return { success: true, url }
+        }
+        return { success: false, error: '图片生成完成但未返回图片 URL' }
+      } else if (status === 'failed' || status === 'cancelled') {
+        return { success: false, error: `图片生成任务${status}` }
+      }
+    }
+
+    return { success: false, error: '图片生成超时' }
+  }
+
   // 生成视频（图生视频）- 使用 agiyiya.com API
   ipcMain.handle('desktopPet:generateVideo', async (_event, params: { imageDataUrl: string; prompt: string; duration?: number }) => {
     const apiKey = getVideoApiKey()
@@ -570,11 +704,22 @@ export function registerDesktopPetIpc(): void {
       const imageUrl = uploadResult.url
       console.log('[DesktopPet] 图片上传成功:', imageUrl)
 
-      // 2. 提交视频生成任务
+      // 2. 生成绿色背景图片
+      const greenBgResult = await generateGreenBackgroundImage(baseUrl, apiKey, imageUrl)
+      let finalImageUrl = imageUrl
+
+      if (greenBgResult.success && greenBgResult.url) {
+        finalImageUrl = greenBgResult.url
+        console.log('[DesktopPet] 使用绿色背景图片生成视频')
+      } else {
+        console.log('[DesktopPet] 绿色背景生成失败，使用原图:', greenBgResult.error)
+      }
+
+      // 3. 提交视频生成任务
       const submitPayload = JSON.stringify({
         model: 'doubao-seedance-1-0-pro-fast',
         prompt: prompt || '角色做简单的呼吸动作，身体轻微起伏',
-        image_urls: [imageUrl],
+        image_urls: [finalImageUrl],
         duration: Math.min(Math.max(duration, 1), 10), // 限制1-10秒
       })
 
@@ -727,29 +872,11 @@ export function registerDesktopPetIpc(): void {
           }
 
           if (gifResult.success && gifResult.path) {
-            // 5. 去除背景（使用 rembg）
-            const transparentGifPath = path.join(imagesDir, `pet-transparent-${taskId}.gif`)
-            const bgRemoveResult = await removeGifBackground(gifResult.path, transparentGifPath)
-
-            let finalGifPath = gifResult.path
-
-            if (bgRemoveResult.success && bgRemoveResult.path) {
-              // 背景去除成功，使用透明 GIF
-              finalGifPath = bgRemoveResult.path
-              // 删除原始 GIF
-              if (fs.existsSync(gifResult.path)) {
-                fs.unlinkSync(gifResult.path)
-              }
-              console.log('[DesktopPet] 背景去除成功')
-            } else {
-              // 背景去除失败，使用原始 GIF
-              console.log('[DesktopPet] 背景去除失败，使用原始 GIF:', bgRemoveResult.error)
-            }
-
+            // GIF 已经通过 chroma key 处理了绿色背景透明
             // 读取 GIF 转为 base64
-            const gifData = fs.readFileSync(finalGifPath)
+            const gifData = fs.readFileSync(gifResult.path)
             const gifBase64 = `data:image/gif;base64,${gifData.toString('base64')}`
-            return { success: true, gifPath: finalGifPath, gifDataUrl: gifBase64 }
+            return { success: true, gifPath: gifResult.path, gifDataUrl: gifBase64 }
           } else {
             return { success: false, error: gifResult.error || 'GIF 转换失败' }
           }
@@ -766,27 +893,33 @@ export function registerDesktopPetIpc(): void {
   })
 }
 
-// 视频转 GIF（使用 ffmpeg）
+// 视频转 GIF（使用 ffmpeg，带绿幕抠图）
 async function convertVideoToGif(videoPath: string, outputPath: string): Promise<{ success: boolean; path?: string; error?: string }> {
   return new Promise((resolve) => {
     // 生成调色板以提高 GIF 质量
     const palettePath = videoPath.replace('.mp4', '-palette.png')
 
-    // 第一步：生成调色板
+    // 第一步：生成带透明通道的调色板
+    // 使用 chroma key 将绿色变透明
     const paletteProcess = spawn('ffmpeg', [
       '-i', videoPath,
-      '-vf', 'fps=10,scale=128:-1:flags=lanczos,palettegen',
+      '-vf', 'fps=10,scale=128:-1:flags=lanczos,chromakey=0x00FF00:0.27:0.0,palettegen=reserve_transparent=1',
       '-y',
       palettePath,
     ])
 
+    let paletteStderr = ''
+    paletteProcess.stderr?.on('data', (data) => {
+      paletteStderr += data.toString()
+    })
+
     paletteProcess.on('close', (paletteCode) => {
       if (paletteCode !== 0) {
-        // 如果调色板生成失败，尝试直接转换
+        // 如果调色板生成失败，尝试直接转换（无透明）
         console.log('[DesktopPet] 调色板生成失败，尝试直接转换')
         const directProcess = spawn('ffmpeg', [
           '-i', videoPath,
-          '-vf', 'fps=10,scale=128:-1:flags=lanczos',
+          '-vf', 'fps=10,scale=128:-1:flags=lanczos,chromakey=0x00FF00:0.27:0.0',
           '-y',
           outputPath,
         ])
@@ -800,14 +933,21 @@ async function convertVideoToGif(videoPath: string, outputPath: string): Promise
         return
       }
 
-      // 第二步：使用调色板生成 GIF
+      // 第二步：使用调色板生成透明 GIF
+      // chroma key 将绿色变透明，paletteuse 应用调色板
       const gifProcess = spawn('ffmpeg', [
         '-i', videoPath,
         '-i', palettePath,
-        '-lavfi', 'fps=10,scale=128:-1:flags=lanczos[x];[x][1:v]paletteuse',
+        '-lavfi', '[0:v]fps=10,scale=128:-1:flags=lanczos,chromakey=0x00FF00:0.27:0.0[s];[s][1:v]paletteuse=alpha_threshold=128',
+        '-loop', '0',
         '-y',
         outputPath,
       ])
+
+      let gifStderr = ''
+      gifProcess.stderr?.on('data', (data) => {
+        gifStderr += data.toString()
+      })
 
       gifProcess.on('close', (code) => {
         // 清理调色板文件

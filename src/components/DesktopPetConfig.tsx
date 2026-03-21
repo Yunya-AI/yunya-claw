@@ -26,13 +26,12 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState<string | null>(null)
   const [sourceImage, setSourceImage] = useState<string | null>(null)
-  const [actionPrompts, setActionPrompts] = useState<Array<{ prompt: string; duration: number }>>([{ prompt: '呼吸', duration: 10 }])
+  const [actionPrompts, setActionPrompts] = useState<Array<{ prompt: string; duration: number }>>([{ prompt: '呼吸', duration: 2 }])
   const [generateProgress, setGenerateProgress] = useState<{ current: number; total: number; currentPrompt: string } | null>(null)
-  const [rembgAvailable, setRembgAvailable] = useState<boolean | null>(null)
 
   // 添加动作描述
   const handleAddPrompt = () => {
-    setActionPrompts(prev => [...prev, { prompt: '挥手', duration: 10 }])
+    setActionPrompts(prev => [...prev, { prompt: '挥手', duration: 2 }])
   }
 
   // 删除动作描述
@@ -48,17 +47,7 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
   // 加载配置
   useEffect(() => {
     loadActions()
-    checkRembg()
   }, [])
-
-  const checkRembg = async () => {
-    try {
-      const res = await window.electronAPI?.desktopPet?.checkRembg()
-      setRembgAvailable(res?.available ?? false)
-    } catch {
-      setRembgAvailable(false)
-    }
-  }
 
   const loadActions = async () => {
     setLoading(true)
@@ -389,7 +378,7 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
 
                     // 清空输入
                     setSourceImage(null)
-                    setActionPrompts([{ prompt: '呼吸', duration: 10 }])
+                    setActionPrompts([{ prompt: '呼吸', duration: 2 }])
 
                   } catch (err) {
                     setGenerateError(String(err))
@@ -428,16 +417,9 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
           <div className="text-xs text-muted-foreground space-y-1">
             <p>• 每个输入框填写一个动作描述，如：呼吸、挥手、跳跃</p>
             <p>• 右侧选择视频时长（1-10秒）</p>
-            <p>• 支持的图片格式：PNG、JPG、WebP（推荐白底或透明背景）</p>
+            <p>• 支持的图片格式：PNG、JPG、WebP（推荐白底背景）</p>
             <p>• 需要在「设置」中配置 <code className="bg-muted px-1 rounded">AGIYIYA_API_KEY</code> 环境变量</p>
-            {rembgAvailable === false && (
-              <p className="text-yellow-500">
-                • 背景去除需要安装 rembg：<code className="bg-muted px-1 rounded">pip install rembg</code>
-              </p>
-            )}
-            {rembgAvailable === true && (
-              <p className="text-green-500">• 背景去除功能可用（rembg）</p>
-            )}
+            <p>• 背景会自动变为绿色再生成视频，最终输出透明背景 GIF</p>
           </div>
         </div>
       </div>
