@@ -30,6 +30,58 @@ function getPetImagesDir(): string {
   return imagesDir
 }
 
+// 形象库配置文件路径
+function getCharacterLibraryPath(): string {
+  const configDir = path.join(app.getPath('userData'), 'openclaw')
+  return path.join(configDir, 'character-library.json')
+}
+
+// 形象库图片目录
+function getCharacterImagesDir(): string {
+  const configDir = path.join(app.getPath('userData'), 'openclaw')
+  const imagesDir = path.join(configDir, 'character-images')
+  if (!fs.existsSync(imagesDir)) {
+    fs.mkdirSync(imagesDir, { recursive: true })
+  }
+  return imagesDir
+}
+
+// 形象接口
+interface CharacterItem {
+  id: string
+  name: string
+  imageDataUrl: string
+  createdAt: number
+}
+
+// 获取形象库列表
+function getCharacterLibrary(): CharacterItem[] {
+  try {
+    const libraryPath = getCharacterLibraryPath()
+    if (fs.existsSync(libraryPath)) {
+      const raw = fs.readFileSync(libraryPath, 'utf-8')
+      return JSON.parse(raw)
+    }
+  } catch (err) {
+    console.error('[DesktopPet] 读取形象库失败:', err)
+  }
+  return []
+}
+
+// 保存形象库
+function saveCharacterLibrary(characters: CharacterItem[]): void {
+  try {
+    const libraryPath = getCharacterLibraryPath()
+    const dir = path.dirname(libraryPath)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
+    fs.writeFileSync(libraryPath, JSON.stringify(characters, null, 2), 'utf-8')
+  } catch (err) {
+    console.error('[DesktopPet] 保存形象库失败:', err)
+  }
+}
+
 // 默认配置
 const defaultConfig = {
   enabled: false,
@@ -503,6 +555,71 @@ export function registerDesktopPetIpc(): void {
       }
     }
     return { success: false, error: '化身窗口未打开' }
+  })
+
+  // ========== 形象库相关 ==========
+
+  // 获取形象库列表
+  ipcMain.handle('desktopPet:getCharacterLibrary', () => {
+    const characters = getCharacterLibrary()
+    return { success: true, characters }
+  })
+
+  // 添加形象到形象库
+  ipcMain.handle('desktopPet:addCharacter', (_event, character: { name: string; imageDataUrl: string }) => {
+    try {
+      const characters = getCharacterLibrary()
+      const newCharacter: CharacterItem = {
+        id: `char_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        name: character.name,
+        imageDataUrl: character.imageDataUrl,
+        createdAt: Date.now(),
+      }
+      characters.push(newCharacter)
+      saveCharacterLibrary(characters)
+      console.log('[DesktopPet] 添加形象成功:', newCharacter.id)
+      return { success: true, character: newCharacter }
+    } catch (err) {
+      console.error('[DesktopPet] 添加形象失败:', err)
+      return { success: false, error: '添加形象失败' }
+    }
+  })
+
+  // 删除形象
+  ipcMain.handle('desktopPet:deleteCharacter', (_event, characterId: string) => {
+    try {
+      const characters = getCharacterLibrary()
+      const index = characters.findIndex(c => c.id === characterId)
+      if (index !== -1) {
+        characters.splice(index, 1)
+        saveCharacterLibrary(characters)
+        console.log('[DesktopPet] 删除形象成功:', characterId)
+        return { success: true }
+      }
+      return { success: false, error: '未找到该形象' }
+    } catch (err) {
+      console.error('[DesktopPet] 删除形象失败:', err)
+      return { success: false, error: '删除形象失败' }
+    }
+  })
+
+  // 更新形象
+  ipcMain.handle('desktopPet:updateCharacter', (_event, characterId: string, updates: { name?: string; imageDataUrl?: string }) => {
+    try {
+      const characters = getCharacterLibrary()
+      const character = characters.find(c => c.id === characterId)
+      if (character) {
+        if (updates.name !== undefined) character.name = updates.name
+        if (updates.imageDataUrl !== undefined) character.imageDataUrl = updates.imageDataUrl
+        saveCharacterLibrary(characters)
+        console.log('[DesktopPet] 更新形象成功:', characterId)
+        return { success: true, character }
+      }
+      return { success: false, error: '未找到该形象' }
+    } catch (err) {
+      console.error('[DesktopPet] 更新形象失败:', err)
+      return { success: false, error: '更新形象失败' }
+    }
   })
 
   // ========== 视频生成相关 ==========

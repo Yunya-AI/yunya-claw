@@ -125,6 +125,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ensurePlugin: (pluginId: string) => ipcRenderer.invoke('integrations:ensurePlugin', pluginId),
     pairingApprove: (channel: string, code: string) =>
       ipcRenderer.invoke('integrations:pairingApprove', channel, code),
+    // 微信相关
+    startWeixinQrcode: () => ipcRenderer.invoke('integrations:startWeixinQrcode'),
+    stopWeixinQrcode: () => ipcRenderer.invoke('integrations:stopWeixinQrcode'),
+    onWeixinQrcode: (callback: (data: { qrcodeUrl?: string; qrcodeAscii?: string }) => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, data: { qrcodeUrl?: string; qrcodeAscii?: string }) => callback(data)
+      ipcRenderer.on('integrations:weixinQrcode', wrapped)
+      return () => ipcRenderer.removeListener('integrations:weixinQrcode', wrapped)
+    },
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
@@ -176,6 +184,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('desktopPet:playAction', wrapped)
       return () => ipcRenderer.removeListener('desktopPet:playAction', wrapped)
     },
+    // 形象库
+    getCharacterLibrary: () => ipcRenderer.invoke('desktopPet:getCharacterLibrary'),
+    addCharacter: (character: { name: string; imageDataUrl: string }) =>
+      ipcRenderer.invoke('desktopPet:addCharacter', character),
+    deleteCharacter: (characterId: string) => ipcRenderer.invoke('desktopPet:deleteCharacter', characterId),
+    updateCharacter: (characterId: string, updates: { name?: string; imageDataUrl?: string }) =>
+      ipcRenderer.invoke('desktopPet:updateCharacter', characterId, updates),
   },
   lifecycle: {
     onStep: (callback: (data: { phase: 'starting' | 'stopping'; step: string }) => void) => {

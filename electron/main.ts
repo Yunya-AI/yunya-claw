@@ -2190,6 +2190,143 @@ ipcMain.handle('integrations:pairingApprove', async (_event, channel: string, co
   })
 })
 
+/** 微信二维码监听进程 */
+let weixinQrcodeListener: ChildProcess | null = null
+
+/** 安装微信插件（使用内置打包方式，与QQ/钉钉一致） */
+ipcMain.handle('integrations:installWeixin', async () => {
+  const deps = { getOpenclawConfigDir, readOpenclawConfig, writeOpenclawConfig }
+  const result = await ensurePlugin(deps, 'openclaw-weixin')
+  return { success: !result.error, installed: result.installed, error: result.error }
+})
+
+/** 启动微信扫码登录（执行 openclaw channels login） */
+ipcMain.handle('integrations:startWeixinQrcode', async (event) => {
+  // 先停止之前的监听
+  if (weixinQrcodeListener) {
+    weixinQrcodeListener.kill()
+    weixinQrcodeListener = null
+  }
+
+  // 先确保插件已安装
+  const deps = { getOpenclawConfigDir, readOpenclawConfig, writeOpenclawConfig }
+  const pluginResult = await ensurePlugin(deps, 'openclaw-weixin')
+  if (pluginResult.error && !pluginResult.installed) {
+    return { success: false, error: pluginResult.error }
+  }
+
+  const openclawDir = getOpenclawProjectRoot()
+  const { nodePath, nodeDir } = getNodeExecutablePath()
+  const configPath = getOpenclawConfigPath()
+  const stateDir = getOpenclawConfigDir()
+
+  const baseEnv: Record<string, string> = {
+    ...process.env,
+    OPENCLAW_CONFIG_PATH: configPath,
+    OPENCLAW_STATE_DIR: stateDir,
+    PYTHONIOENCODING: 'utf-8',
+    FORCE_COLOR: '0',
+  }
+  if (nodeDir) baseEnv.PATH = `${nodeDir}${path.delimiter}${baseEnv.PATH || ''}`
+
+  return new Promise<{ success: boolean; error?: string }>((resolve) => {
+    console.log('[Weixin] 启动扫码登录...')
+
+    // 执行 openclaw channels login --channel openclaw-weixin
+    const child = spawn(nodePath, ['openclaw.mjs', 'channels', 'login', '--channel', 'openclaw-weixin'], {
+      cwd: openclawDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      env: baseEnv,
+    })
+
+    weixinQrcodeListener = child
+    integrationChildren.add(child)
+    child.once('close', () => {
+      integrationChildren.delete(child)
+      if (weixinQrcodeListener === child) weixinQrcodeListener = null
+    })
+
+    let resolved = false
+
+    let asciiQrcodeBuffer = ''
+
+    child.stdout?.on('data', (d: Buffer) => {
+      const text = d.toString('utf8')
+      console.log('[Weixin QR]', text.trim())
+
+      // 检测 ASCII 二维码（包含 █ 字符的输出）
+      if (text.includes('█') || text.includes('▀') || text.includes('▄')) {
+        asciiQrcodeBuffer += text
+        // 当检测到足够多的行时发送
+        const lines = asciiQrcodeBuffer.split('\n').filter(l => l.includes('█') || l.includes('▀') || l.includes('▄'))
+        if (lines.length > 15 && !resolved) {
+          resolved = true
+          event.sender.send('integrations:weixinQrcode', { qrcodeAscii: asciiQrcodeBuffer })
+          resolve({ success: true })
+        }
+      }
+
+      // 尝试从输出中提取二维码 URL
+      const qrcodeMatch = text.match(/qrcode[:\s]+(https?:\/\/[^\s]+)/i) ||
+                          text.match(/二维码[:\s]*(https?:\/\/[^\s]+)/i) ||
+                          text.match(/scan[:\s]+(https?:\/\/[^\s]+)/i) ||
+                          text.match(/(https?:\/\/[^\s]*qrcode[^\s]*)/i)
+
+      if (qrcodeMatch && !resolved) {
+        resolved = true
+        event.sender.send('integrations:weixinQrcode', { qrcodeUrl: qrcodeMatch[1] })
+        resolve({ success: true })
+      }
+
+      // 检测 base64 二维码图片
+      const base64Match = text.match(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/)
+      if (base64Match && !resolved) {
+        resolved = true
+        event.sender.send('integrations:weixinQrcode', { qrcodeUrl: base64Match[0] })
+        resolve({ success: true })
+      }
+    })
+
+    child.stderr?.on('data', (d: Buffer) => {
+      const text = d.toString('utf8')
+      console.error('[Weixin QR Error]', text.trim())
+    })
+
+    child.on('close', (code) => {
+      if (!resolved) {
+        resolved = true
+        resolve({ success: true, error: code === 0 ? '登录成功' : `进程退出 (${code})` })
+      }
+    })
+
+    child.on('error', (err) => {
+      if (!resolved) {
+        resolved = true
+        resolve({ success: false, error: String(err) })
+      }
+    })
+
+    // 60秒超时
+    setTimeout(() => {
+      if (!resolved) {
+        resolved = true
+        resolve({ success: true, error: '等待扫码中...' })
+      }
+    }, 60000)
+  })
+})
+
+/** 停止微信扫码登录 */
+ipcMain.handle('integrations:stopWeixinQrcode', async () => {
+  if (weixinQrcodeListener) {
+    weixinQrcodeListener.kill()
+    weixinQrcodeListener = null
+    console.log('[Weixin] 扫码登录已停止')
+  }
+  return { success: true }
+})
+
 ipcMain.handle('config:saveProviders', async (_event, providers: ProviderData[], selectedModel?: { providerKey: string; modelId: string }) => {
   try {
     const config = readOpenclawConfig()

@@ -15,6 +15,7 @@ export interface BundledPluginDef {
 const BUNDLED_PLUGINS: BundledPluginDef[] = [
   { id: 'qqbot', npmPackage: '@sliverp/qqbot@latest' },
   { id: 'dingtalk-connector', npmPackage: '@dingtalk-real-ai/dingtalk-connector@latest' },
+  { id: 'openclaw-weixin', npmPackage: '@tencent-weixin/openclaw-weixin@latest' },
 ]
 
 const PLUGIN_MAP = Object.fromEntries(BUNDLED_PLUGINS.map(p => [p.id, p]))

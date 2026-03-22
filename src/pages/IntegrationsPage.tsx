@@ -3,12 +3,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { Copy, Check, Loader2, MessageCircle, Send, Bird, Terminal } from 'lucide-react'
+import { Copy, Check, Loader2, MessageCircle, Send, Bird, Terminal, Scan } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type TabKey = 'qq' | 'feishu' | 'dingtalk' | 'other'
+type TabKey = 'weixin' | 'qq' | 'feishu' | 'dingtalk' | 'other'
 
 const TABS: { key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: 'weixin', label: '微信', icon: Scan },
   { key: 'qq', label: 'QQ', icon: MessageCircle },
   { key: 'feishu', label: '飞书', icon: Send },
   { key: 'dingtalk', label: '钉钉', icon: Bird },
@@ -22,7 +23,7 @@ function copyToClipboard(text: string): Promise<boolean> {
 type PairingResult = { type: 'success' | 'error'; text: string } | null
 
 export default function IntegrationsPage() {
-  const [activeTab, setActiveTab] = useState<TabKey>('qq')
+  const [activeTab, setActiveTab] = useState<TabKey>('weixin')
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null)
   const [pairingResults, setPairingResults] = useState<Record<string, PairingResult>>({})
 
@@ -42,7 +43,7 @@ export default function IntegrationsPage() {
     <div className="flex flex-col h-full overflow-hidden">
       <div className="shrink-0 px-6 py-4 border-b border-border">
         <h1 className="text-lg font-semibold">接入</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">配置 QQ、飞书、钉钉等渠道，将智能体接入到群聊与私聊</p>
+        <p className="text-sm text-muted-foreground mt-0.5">配置微信、QQ、飞书、钉钉等渠道，将智能体接入到群聊与私聊</p>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -67,6 +68,7 @@ export default function IntegrationsPage() {
 
         {/* 右侧内容 */}
         <div className="flex-1 overflow-y-auto p-6">
+          {activeTab === 'weixin' && <WeixinIntegration pairingResult={pairingResults['weixin'] ?? null} onPairingResultChange={r => setPairingResult('weixin', r)} />}
           {activeTab === 'qq' && <QQIntegration onCopy={handleCopy} copiedCmd={copiedCmd} pairingResult={pairingResults['qqbot'] ?? null} onPairingResultChange={r => setPairingResult('qqbot', r)} />}
           {activeTab === 'feishu' && <FeishuIntegration onCopy={handleCopy} copiedCmd={copiedCmd} pairingResult={pairingResults['feishu'] ?? null} onPairingResultChange={r => setPairingResult('feishu', r)} />}
           {activeTab === 'dingtalk' && <DingTalkIntegration onCopy={handleCopy} copiedCmd={copiedCmd} pairingResult={pairingResults['dingtalk-connector'] ?? null} onPairingResultChange={r => setPairingResult('dingtalk-connector', r)} />}
@@ -85,6 +87,217 @@ interface IntegrationProps {
 interface ChannelWithPairingProps extends IntegrationProps {
   pairingResult: PairingResult
   onPairingResultChange: (v: PairingResult) => void
+}
+
+function WeixinIntegration({ pairingResult: _pairingResult, onPairingResultChange: _onPairingResultChange }: ChannelWithPairingProps) {
+  const [enabled, setEnabled] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveStep, setSaveStep] = useState<'installing' | 'configuring' | null>(null)
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [qrcodeUrl, setQrcodeUrl] = useState<string | null>(null)
+  const [qrcodeAscii, setQrcodeAscii] = useState<string | null>(null)
+  const [listening, setListening] = useState(false)
+
+  // 监听二维码事件
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.integrations.onWeixinQrcode((data) => {
+      if (data.qrcodeUrl) {
+        setQrcodeUrl(data.qrcodeUrl)
+        setQrcodeAscii(null)
+      }
+      if (data.qrcodeAscii) {
+        setQrcodeAscii(data.qrcodeAscii)
+        setQrcodeUrl(null)
+      }
+      setMessage({ type: 'success', text: '请使用微信扫描二维码' })
+    })
+    return () => unsubscribe?.()
+  }, [])
+
+  // 加载配置
+  useEffect(() => {
+    if (!window.electronAPI?.config?.read) return
+    window.electronAPI.config.read().then((cfg: Record<string, unknown>) => {
+      const ch = (cfg.channels as Record<string, unknown>)?.['openclaw-weixin'] as Record<string, unknown> | undefined
+      if (ch) {
+        setEnabled(ch.enabled !== false)
+      }
+    }).catch(() => {})
+  }, [])
+
+  // 保存配置（参考 QQ 的方式：先安装插件，再配置渠道）
+  const handleSave = async () => {
+    setSaving(true)
+    setMessage(null)
+    setSaveStep('installing')
+    try {
+      // 1. 安装微信插件
+      const ensureRes = await window.electronAPI?.integrations.ensurePlugin('openclaw-weixin')
+      setSaveStep('configuring')
+      if (ensureRes && !ensureRes.success) {
+        setMessage({ type: 'error', text: ensureRes.error || '插件安装失败' })
+        return
+      }
+
+      // 2. 保存渠道配置
+      const patchRes = await window.electronAPI?.integrations.patchChannels('openclaw-weixin', { enabled })
+      if (patchRes?.success) {
+        const hint = ensureRes?.installed ? '微信插件已安装，配置已保存，请重启应用使配置生效' : '微信配置已保存，请重启应用使配置生效'
+        setMessage({ type: 'success', text: hint })
+      } else {
+        setMessage({ type: 'error', text: patchRes?.error || '配置保存失败' })
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: String(err) })
+    } finally {
+      setSaving(false)
+      setSaveStep(null)
+    }
+  }
+
+  // 扫码登录
+  const handleScanLogin = async () => {
+    setListening(true)
+    setQrcodeUrl(null)
+    setQrcodeAscii(null)
+    setMessage(null)
+    try {
+      const res = await window.electronAPI?.integrations.startWeixinQrcode()
+      if (res && !res.success && res.error) {
+        if (!res.error.includes('等待')) {
+          setMessage({ type: 'error', text: res.error })
+          setListening(false)
+        }
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: String(err) })
+      setListening(false)
+    }
+  }
+
+  // 停止登录
+  const handleStop = async () => {
+    await window.electronAPI?.integrations.stopWeixinQrcode()
+    setListening(false)
+    setMessage(null)
+  }
+
+  const saveButtonText = saving
+    ? (saveStep === 'installing' ? '安装插件中…' : saveStep === 'configuring' ? '保存配置中…' : '保存中…')
+    : '保存配置'
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <div className="flex items-center gap-3">
+        <div className="w-12 h-12 shrink-0 aspect-square rounded-xl bg-green-500/20 flex items-center justify-center">
+          <Scan className="w-6 h-6 text-green-500" />
+        </div>
+        <div>
+          <h2 className="text-base font-semibold">微信</h2>
+          <p className="text-sm text-muted-foreground">
+            将微信机器人接入 OpenClaw，支持群聊与私聊。
+            <br />
+            保存配置后使用手机微信扫描二维码完成登录。
+          </p>
+          <span className="text-xs text-muted-foreground mt-1 block">
+            使用文档{' '}
+            <button
+              type="button"
+              onClick={() => window.electronAPI?.util?.openExternal('https://mp.weixin.qq.com/s/GZqD9nwKS1QHM0Mh67FmrQ')}
+              className="text-primary hover:underline"
+            >
+              https://mp.weixin.qq.com/s/GZqD9nwKS1QHM0Mh67FmrQ
+            </button>
+          </span>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <label className="text-sm font-medium shrink-0">启用</label>
+          <Switch checked={enabled} onCheckedChange={setEnabled} />
+          <span className="text-sm text-muted-foreground">{enabled ? '已启用' : '已禁用'}</span>
+        </div>
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        点击保存将自动安装微信插件（若未安装）并配置渠道。保存后请重启应用使配置生效，然后点击「扫码登录」完成微信连接。
+      </p>
+
+      <div className="flex gap-2">
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          {saveButtonText}
+        </Button>
+      </div>
+
+      {/* 二维码区域 */}
+      <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-6">
+        <p className="text-sm font-medium text-green-600 dark:text-green-400 mb-4">扫码登录</p>
+        <p className="text-sm text-muted-foreground mb-4">
+          保存配置并重启应用后，点击「扫码登录」显示登录二维码，使用手机微信扫描完成登录。
+        </p>
+
+        <div className="flex gap-2 mb-4">
+          {listening ? (
+            <Button onClick={handleStop} variant="destructive">
+              停止
+            </Button>
+          ) : (
+            <Button onClick={handleScanLogin} variant="secondary">
+              扫码登录
+            </Button>
+          )}
+        </div>
+
+        {/* 二维码显示区域 */}
+        <div className="flex items-center justify-center">
+          {qrcodeUrl ? (
+            <div className="bg-white p-4 rounded-lg">
+              <img
+                src={qrcodeUrl}
+                alt="微信登录二维码"
+                className="w-48 h-48"
+                onError={() => {
+                  setMessage({ type: 'error', text: '二维码加载失败' })
+                  setQrcodeUrl(null)
+                }}
+              />
+              <p className="text-center text-sm text-gray-600 mt-2">请扫描此二维码</p>
+            </div>
+          ) : qrcodeAscii ? (
+            <div className="bg-gray-900 p-4 rounded-lg">
+              <pre className="text-green-400 text-xs leading-tight font-mono whitespace-pre">{qrcodeAscii}</pre>
+              <p className="text-center text-sm text-gray-400 mt-2">请扫描上方二维码</p>
+            </div>
+          ) : (
+            <div className="w-48 h-48 border-2 border-dashed border-muted-foreground/30 rounded-lg flex items-center justify-center">
+              <div className="text-center text-muted-foreground">
+                {listening ? (
+                  <>
+                    <Loader2 className="w-12 h-12 mx-auto mb-2 animate-spin" />
+                    <p className="text-sm">获取二维码中...</p>
+                  </>
+                ) : (
+                  <>
+                    <Scan className="w-12 h-12 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">二维码区域</p>
+                    <p className="text-xs">点击扫码登录</p>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {message && (
+        <p className={cn('text-sm', message.type === 'success' ? 'text-green-500' : 'text-red-500')}>
+          {message.text}
+        </p>
+      )}
+    </div>
+  )
 }
 
 type QQDmPolicy = 'open' | 'pairing' | 'allowlist'

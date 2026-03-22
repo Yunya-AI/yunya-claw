@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { Plus, Minus, Trash2, Image, Play, RefreshCw, Info, ChevronDown, ChevronUp, Wand2, Loader2, MonitorPlay, Eye, EyeOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -12,9 +12,260 @@ interface PetAction {
 
 interface DesktopPetConfigProps {
   onSaved?: () => void
+  selectedCharacterImage?: string | null
+  onImageCleared?: () => void
 }
 
-export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
+// 判断是否是图片 URL
+const isImageUrl = (frame: string): boolean => {
+  return frame.startsWith('data:image') || frame.startsWith('http') || frame.startsWith('file:')
+}
+
+// 比例选项
+const ASPECT_RATIO_OPTIONS = [
+  { value: '16:9', label: '16:9' },
+  { value: '9:16', label: '9:16' },
+  { value: '4:3', label: '4:3' },
+  { value: '3:4', label: '3:4' },
+  { value: '1:1', label: '1:1' },
+]
+
+// 时长选项
+const DURATION_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(d => ({ value: String(d), label: `${d}s` }))
+
+// 自定义下拉选择组件
+function CustomSelect({
+  value,
+  options,
+  onChange,
+  disabled,
+  className = '',
+}: {
+  value: string
+  options: Array<{ value: string; label: string }>
+  onChange: (value: string) => void
+  disabled?: boolean
+  className?: string
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  const selectedOption = options.find(o => o.value === value) || options[0]
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  return (
+    <div ref={ref} className={`relative ${className}`}>
+      <button
+        type="button"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className="w-full h-6 bg-input border border-border rounded px-2 text-xs flex items-center justify-between hover:bg-muted/50 transition-colors disabled:opacity-50"
+      >
+        <span className="flex-1 text-center">{selectedOption.label}</span>
+        <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-50 overflow-hidden">
+          {options.map(option => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange(option.value)
+                setIsOpen(false)
+              }}
+              className={`w-full px-2 py-1.5 text-xs text-left transition-colors ${
+                value === option.value ? 'bg-primary/20' : 'hover:bg-muted'
+              }`}
+            >
+              <span>{option.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Memo 化的帧组件
+const FrameItem = memo(function FrameItem({
+  frame,
+  frameIndex,
+  onUploadImage,
+  onRemoveFrame,
+  onUpdateFrame,
+}: {
+  frame: string
+  frameIndex: number
+  onUploadImage: () => void
+  onRemoveFrame: () => void
+  onUpdateFrame: (value: string) => void
+}) {
+  return (
+    <div className="relative group">
+      <div
+        className="w-12 h-12 rounded border border-border bg-input flex items-center justify-center overflow-hidden"
+        style={{ background: isImageUrl(frame) ? 'transparent' : 'repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 8px 8px' }}
+      >
+        {isImageUrl(frame) ? (
+          <img src={frame} alt={`frame-${frameIndex}`} className="w-full h-full object-contain" />
+        ) : (
+          <span className="text-xl">{frame}</span>
+        )}
+      </div>
+      <div className="absolute -top-1 -right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={onUploadImage}
+          className="p-1 rounded bg-primary text-primary-foreground"
+          title="上传图片"
+        >
+          <Image className="w-3 h-3" />
+        </button>
+        <button
+          onClick={onRemoveFrame}
+          className="p-1 rounded bg-destructive text-destructive-foreground"
+          title="删除帧"
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
+      <input
+        type="text"
+        value={frame}
+        onChange={(e) => onUpdateFrame(e.target.value)}
+        className="absolute inset-0 w-full h-full opacity-0 cursor-text"
+        title="点击输入 emoji 或图片 URL"
+      />
+    </div>
+  )
+})
+
+// Memo 化的动作卡片组件
+const ActionCard = memo(function ActionCard({
+  action,
+  onPreview,
+  onPlay,
+  onRemove,
+  onToggleHidden,
+  onUpdateName,
+  onUpdateDuration,
+  onAddFrame,
+  onRemoveFrame,
+  onUpdateFrame,
+  onUploadImage,
+}: {
+  action: PetAction
+  onPreview: () => void
+  onPlay: () => void
+  onRemove: () => void
+  onToggleHidden: () => void
+  onUpdateName: (name: string) => void
+  onUpdateDuration: (duration: number) => void
+  onAddFrame: () => void
+  onRemoveFrame: (frameIndex: number) => void
+  onUpdateFrame: (frameIndex: number, value: string) => void
+  onUploadImage: (frameIndex: number) => void
+}) {
+  return (
+    <div className="bg-card rounded-lg border border-border p-4 space-y-3">
+      {/* 动作头部 */}
+      <div className="flex items-center gap-3">
+        <input
+          type="text"
+          value={action.name}
+          onChange={(e) => onUpdateName(e.target.value)}
+          placeholder="动作名称（如 idle、happy）"
+          className="flex-1 bg-input border border-border rounded px-3 py-2 text-sm"
+        />
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-muted-foreground">持续时间</label>
+          <input
+            type="number"
+            value={action.duration}
+            onChange={(e) => onUpdateDuration(parseInt(e.target.value) || 500)}
+            className="w-20 bg-input border border-border rounded px-2 py-2 text-sm text-center"
+            min={100}
+            max={30000}
+            step={100}
+          />
+          <span className="text-xs text-muted-foreground">ms</span>
+        </div>
+        <button
+          onClick={onPreview}
+          className="p-2 rounded hover:bg-muted transition-colors"
+          title="预览"
+        >
+          <Play className="w-4 h-4" />
+        </button>
+        <button
+          onClick={onPlay}
+          className="p-2 rounded hover:bg-primary/20 text-primary transition-colors"
+          title="在化身窗口播放"
+        >
+          <MonitorPlay className="w-4 h-4" />
+        </button>
+        <button
+          onClick={onToggleHidden}
+          className={cn(
+            "p-2 rounded transition-colors",
+            action.hidden ? "bg-muted text-muted-foreground" : "hover:bg-muted"
+          )}
+          title={action.hidden ? "取消隐藏（在预览列表显示）" : "隐藏（不在预览列表显示）"}
+        >
+          {action.hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+        </button>
+        <button
+          onClick={onRemove}
+          className="p-2 rounded hover:bg-destructive/20 text-destructive transition-colors"
+          title="删除动作"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* 帧列表 */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <label className="text-xs text-muted-foreground">帧（{action.frames.length}）</label>
+          <button
+            onClick={onAddFrame}
+            className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted transition-colors"
+          >
+            <Plus className="w-3 h-3" />
+            添加帧
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {action.frames.map((frame, frameIndex) => (
+            <FrameItem
+              key={frameIndex}
+              frame={frame}
+              frameIndex={frameIndex}
+              onUploadImage={() => onUploadImage(frameIndex)}
+              onRemoveFrame={() => onRemoveFrame(frameIndex)}
+              onUpdateFrame={(value) => onUpdateFrame(frameIndex, value)}
+            />
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          点击帧输入 emoji，或点击图片按钮上传图片
+        </p>
+      </div>
+    </div>
+  )
+})
+
+export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onImageCleared }: DesktopPetConfigProps) {
   const [actions, setActions] = useState<PetAction[]>([])
   const [previewAction, setPreviewAction] = useState<string | null>(null)
   const [previewFrame, setPreviewFrame] = useState(0)
@@ -89,6 +340,25 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
   useEffect(() => {
     loadActions()
   }, [])
+
+  // 当选中形象库中的图片时，设置为源图片
+  useEffect(() => {
+    if (selectedCharacterImage) {
+      setSourceImage(selectedCharacterImage)
+      setGenerateError(null)
+      // 获取图片尺寸并计算比例
+      const img = new window.Image()
+      img.onload = () => {
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          const dimensions = { width: img.naturalWidth, height: img.naturalHeight }
+          setImageDimensions(dimensions)
+          const ratio = getClosestAspectRatio(dimensions.width, dimensions.height)
+          setAspectRatio(ratio)
+        }
+      }
+      img.src = selectedCharacterImage
+    }
+  }, [selectedCharacterImage])
 
   const loadActions = async () => {
     setLoading(true)
@@ -198,10 +468,6 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
   const handleReset = () => {
     setActions([])
     setPreviewAction(null)
-  }
-
-  const isImageUrl = (frame: string): boolean => {
-    return frame.startsWith('data:image') || frame.startsWith('http') || frame.startsWith('file:')
   }
 
   const currentPreviewAction = actions.find(a => a.name === previewAction)
@@ -338,17 +604,13 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs text-muted-foreground">比例</span>
-                      <select
+                      <CustomSelect
                         value={aspectRatio}
-                        onChange={(e) => setAspectRatio(e.target.value)}
-                        className="h-6 bg-input border border-border rounded px-1.5 text-xs"
+                        options={ASPECT_RATIO_OPTIONS}
+                        onChange={setAspectRatio}
                         disabled={generating}
-                        title={imageDimensions ? `原图尺寸: ${imageDimensions.width}x${imageDimensions.height}` : ''}
-                      >
-                        {SUPPORTED_ASPECT_RATIOS.map(r => (
-                          <option key={r} value={r}>{r}</option>
-                        ))}
-                      </select>
+                        className="w-16"
+                      />
                     </div>
                     <button
                       onClick={handleAddPrompt}
@@ -371,16 +633,13 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
                         className="flex-1 bg-input border border-border rounded px-3 py-2 text-sm"
                         disabled={generating}
                       />
-                      <select
-                        value={item.duration}
-                        onChange={(e) => handleUpdatePrompt(index, 'duration', parseInt(e.target.value))}
-                        className="w-16 bg-input border border-border rounded px-2 py-2 text-sm text-center"
+                      <CustomSelect
+                        value={String(item.duration)}
+                        options={DURATION_OPTIONS}
+                        onChange={(v) => handleUpdatePrompt(index, 'duration', parseInt(v))}
                         disabled={generating}
-                      >
-                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(d => (
-                          <option key={d} value={d}>{d}s</option>
-                        ))}
-                      </select>
+                        className="w-16"
+                      />
                       {actionPrompts.length > 1 && (
                         <button
                           onClick={() => handleRemovePrompt(index)}
@@ -454,6 +713,7 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
                     // 清空输入
                     setSourceImage(null)
                     setActionPrompts([{ prompt: '呼吸', duration: 2 }])
+                    onImageCleared?.()
 
                   } catch (err) {
                     setGenerateError(String(err))
@@ -569,127 +829,28 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
         ) : (
           <div className="space-y-4">
             {actions.map((action, actionIndex) => (
-              <div key={actionIndex} className="bg-card rounded-lg border border-border p-4 space-y-3">
-                {/* 动作头部 */}
-                <div className="flex items-center gap-3">
-                  <input
-                    type="text"
-                    value={action.name}
-                    onChange={(e) => handleUpdateAction(actionIndex, 'name', e.target.value)}
-                    placeholder="动作名称（如 idle、happy）"
-                    className="flex-1 bg-input border border-border rounded px-3 py-2 text-sm"
-                  />
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-muted-foreground">持续时间</label>
-                    <input
-                      type="number"
-                      value={action.duration}
-                      onChange={(e) => handleUpdateAction(actionIndex, 'duration', parseInt(e.target.value) || 500)}
-                      className="w-20 bg-input border border-border rounded px-2 py-2 text-sm text-center"
-                      min={100}
-                      max={30000}
-                      step={100}
-                    />
-                    <span className="text-xs text-muted-foreground">ms</span>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setPreviewAction(action.name)
-                      setPreviewFrame(0)
-                    }}
-                    className="p-2 rounded hover:bg-muted transition-colors"
-                    title="预览"
-                  >
-                    <Play className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={async () => {
-                      const res = await window.electronAPI?.desktopPet?.playAction(action.name)
-                      if (!res?.success) {
-                        console.error('在化身播放失败:', res?.error)
-                      }
-                    }}
-                    className="p-2 rounded hover:bg-primary/20 text-primary transition-colors"
-                    title="在化身窗口播放"
-                  >
-                    <MonitorPlay className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleUpdateAction(actionIndex, 'hidden', !action.hidden)}
-                    className={cn(
-                      "p-2 rounded transition-colors",
-                      action.hidden ? "bg-muted text-muted-foreground" : "hover:bg-muted"
-                    )}
-                    title={action.hidden ? "取消隐藏（在预览列表显示）" : "隐藏（不在预览列表显示）"}
-                  >
-                    {action.hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                  <button
-                    onClick={() => handleRemoveAction(actionIndex)}
-                    className="p-2 rounded hover:bg-destructive/20 text-destructive transition-colors"
-                    title="删除动作"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-
-                {/* 帧列表 */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs text-muted-foreground">帧（{action.frames.length}）</label>
-                    <button
-                      onClick={() => handleAddFrame(actionIndex)}
-                      className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted transition-colors"
-                    >
-                      <Plus className="w-3 h-3" />
-                      添加帧
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {action.frames.map((frame, frameIndex) => (
-                      <div key={frameIndex} className="relative group">
-                        <div
-                          className="w-12 h-12 rounded border border-border bg-input flex items-center justify-center overflow-hidden"
-                          style={{ background: isImageUrl(frame) ? 'transparent' : 'repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 8px 8px' }}
-                        >
-                          {isImageUrl(frame) ? (
-                            <img src={frame} alt={`frame-${frameIndex}`} className="w-full h-full object-contain" />
-                          ) : (
-                            <span className="text-xl">{frame}</span>
-                          )}
-                        </div>
-                        <div className="absolute -top-1 -right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => handleUploadImage(actionIndex, frameIndex)}
-                            className="p-1 rounded bg-primary text-primary-foreground"
-                            title="上传图片"
-                          >
-                            <Image className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={() => handleRemoveFrame(actionIndex, frameIndex)}
-                            className="p-1 rounded bg-destructive text-destructive-foreground"
-                            title="删除帧"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                        {/* 编辑 Emoji */}
-                        <input
-                          type="text"
-                          value={frame}
-                          onChange={(e) => handleUpdateFrame(actionIndex, frameIndex, e.target.value)}
-                          className="absolute inset-0 w-full h-full opacity-0 cursor-text"
-                          title="点击输入 emoji 或图片 URL"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    点击帧输入 emoji，或点击图片按钮上传图片
-                  </p>
-                </div>
-              </div>
+              <ActionCard
+                key={action.name}
+                action={action}
+                onPreview={() => {
+                  setPreviewAction(action.name)
+                  setPreviewFrame(0)
+                }}
+                onPlay={async () => {
+                  const res = await window.electronAPI?.desktopPet?.playAction(action.name)
+                  if (!res?.success) {
+                    console.error('在化身播放失败:', res?.error)
+                  }
+                }}
+                onRemove={() => handleRemoveAction(actionIndex)}
+                onToggleHidden={() => handleUpdateAction(actionIndex, 'hidden', !action.hidden)}
+                onUpdateName={(name) => handleUpdateAction(actionIndex, 'name', name)}
+                onUpdateDuration={(duration) => handleUpdateAction(actionIndex, 'duration', duration)}
+                onAddFrame={() => handleAddFrame(actionIndex)}
+                onRemoveFrame={(frameIndex) => handleRemoveFrame(actionIndex, frameIndex)}
+                onUpdateFrame={(frameIndex, value) => handleUpdateFrame(actionIndex, frameIndex, value)}
+                onUploadImage={(frameIndex) => handleUploadImage(actionIndex, frameIndex)}
+              />
             ))}
           </div>
         )}

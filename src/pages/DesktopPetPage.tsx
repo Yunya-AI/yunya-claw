@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Move } from 'lucide-react'
+import { Move, PersonStanding } from 'lucide-react'
 
 interface PetAction {
   name: string
@@ -167,7 +167,7 @@ export default function DesktopPetPage() {
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
-        <span className="text-4xl opacity-30">🐾</span>
+        <PersonStanding className="w-12 h-12 opacity-30 text-muted-foreground" />
       </div>
     )
   }

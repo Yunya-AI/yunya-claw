@@ -42,15 +42,15 @@ importers:
       '@dingtalk-real-ai/dingtalk-connector':
         specifier: ^0.7.1
         version: 0.7.1
-      '@openclaw/feishu':
-        specifier: ^2026.3.2
-        version: 2026.3.2
       '@sliverp/qqbot':
         specifier: ^1.5.3
         version: 1.5.3(clawdbot@2026.1.24-3(@discordjs/opus@0.10.0(encoding@0.1.13))(@types/express@5.0.6)(devtools-protocol@0.0.1595872)(encoding@0.1.13)(opusscript@0.1.1)(typescript@5.9.3))(moltbot@0.1.0)(openclaw@2026.3.2(@napi-rs/canvas@0.1.96)(@types/express@5.0.6)(encoding@0.1.13)(hono@4.11.4)(node-llama-cpp@3.15.0(typescript@5.9.3)))
       '@tailwindcss/vite':
         specifier: ^4.2.1
         version: 4.2.1(vite@7.3.1(@types/node@25.3.3)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.8.2))
+      '@tencent-weixin/openclaw-weixin':
+        specifier: ^1.0.2
+        version: 1.0.2
       '@types/react':
         specifier: ^19.2.14
         version: 19.2.14
@@ -1304,9 +1304,6 @@ packages:
     resolution: {integrity: sha512-da6KbdNCV5sr1/txD896V+6W0iamFWrvVl8cHkBSPT+YlvmT3DwXa4jxZnQc+gnuTEqSWbBeoSZYTayXH9wXcw==}
     engines: {node: '>= 20'}
 
-  '@openclaw/feishu@2026.3.2':
-    resolution: {integrity: sha512-CpwjmLCS8gpZ5fFCRiEA+1i/L+E73Vhz5//TiwQjWJOtVPZEu44db294g3HUR6nB5L0IEpZgKU/JU69HgYl77w==}
-
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
 
@@ -1947,6 +1944,10 @@ packages:
     resolution: {integrity: sha512-TBf2sJjYeb28jD2U/OhwdW0bbOsxkWPwQ7SrqGf9sVcoYwZj7rkXljroBO9wKBut9XnmQLXanuDUeqQK0lGg/w==}
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7
+
+  '@tencent-weixin/openclaw-weixin@1.0.2':
+    resolution: {integrity: sha512-kYPEowHB/0VWt9nQFee/AS6Fb+jbnu38wjkgZDBdKTuJoBL0IBW2obQ0ymgFKBFJJL9rDwnFrb/17ORGZD/X8Q==}
+    engines: {node: '>=22'}
 
   '@tinyhttp/content-disposition@2.2.4':
     resolution: {integrity: sha512-5Kc5CM2Ysn3vTTArBs2vESUt0AQiWZA86yc1TI3B+lxXmtEq133C1nxXNOgnzhrivdPZIh3zLj5gDnZjoLL5GA==}
@@ -6872,18 +6873,6 @@ snapshots:
       '@octokit/request-error': 7.1.0
       '@octokit/webhooks-methods': 6.0.0
 
-  '@openclaw/feishu@2026.3.2':
-    dependencies:
-      '@larksuiteoapi/node-sdk': 1.59.0
-      '@sinclair/typebox': 0.34.48
-      https-proxy-agent: 7.0.6
-      zod: 4.3.6
-    transitivePeerDependencies:
-      - bufferutil
-      - debug
-      - supports-color
-      - utf-8-validate
-
   '@pinojs/redact@0.4.0': {}
 
   '@pkgjs/parseargs@0.11.0':
@@ -7540,6 +7529,11 @@ snapshots:
       '@tailwindcss/oxide': 4.2.1
       tailwindcss: 4.2.1
       vite: 7.3.1(@types/node@25.3.3)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.8.2)
+
+  '@tencent-weixin/openclaw-weixin@1.0.2':
+    dependencies:
+      qrcode-terminal: 0.12.0
+      zod: 4.3.6
 
   '@tinyhttp/content-disposition@2.2.4': {}
 

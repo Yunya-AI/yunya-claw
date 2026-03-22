@@ -17,6 +17,14 @@ interface PetAction {
   hidden?: boolean
 }
 
+// 形象库项
+interface CharacterItem {
+  id: string
+  name: string
+  imageDataUrl: string
+  createdAt: number
+}
+
 interface SkillData {
   name: string
   description: string
@@ -198,6 +206,10 @@ interface ElectronAPI {
     runChannelsAdd: (channel: string, token: string) => Promise<{ success: boolean; error?: string }>
     ensurePlugin: (pluginId: string) => Promise<{ success: boolean; installed?: boolean; error?: string }>
     pairingApprove: (channel: string, code: string) => Promise<{ success: boolean; error?: string }>
+    // 微信相关
+    startWeixinQrcode: () => Promise<{ success: boolean; error?: string }>
+    stopWeixinQrcode: () => Promise<{ success: boolean }>
+    onWeixinQrcode: (callback: (data: { qrcodeUrl?: string; qrcodeAscii?: string }) => void) => () => void
   }
   skills: {
     list: () => Promise<{ success: boolean; skills: SkillData[]; error?: string }>
@@ -234,6 +246,11 @@ interface ElectronAPI {
     playAction: (actionName: string) => Promise<{ success: boolean; error?: string }>
     onActionsUpdated: (callback: (data: { actions: Array<{ name: string; frames: string[]; duration: number; repeat?: number }>; useCustomActions: boolean }) => void) => () => void
     onPlayAction: (callback: (action: { name: string; frames: string[]; duration: number }) => void) => () => void
+    // 形象库
+    getCharacterLibrary: () => Promise<{ success: boolean; characters: CharacterItem[]; error?: string }>
+    addCharacter: (character: { name: string; imageDataUrl: string }) => Promise<{ success: boolean; character?: CharacterItem; error?: string }>
+    deleteCharacter: (characterId: string) => Promise<{ success: boolean; error?: string }>
+    updateCharacter: (characterId: string, updates: { name?: string; imageDataUrl?: string }) => Promise<{ success: boolean; character?: CharacterItem; error?: string }>
   }
   lifecycle: {
     onStep: (callback: (data: { phase: 'starting' | 'stopping'; step: string }) => void) => () => void

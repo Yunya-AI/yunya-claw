@@ -10,7 +10,7 @@ import {
   Info,
   Plug2,
   Clock,
-  Cat,
+  PersonStanding,
 } from 'lucide-react'
 import { useAppearance } from '@/contexts/AppearanceContext'
 
@@ -40,7 +40,7 @@ const navItems: { key: PageKey; label: string; icon: React.ComponentType<{ class
   { key: 'models', label: '模型', icon: AIIcon },
   { key: 'settings', label: '设置', icon: Settings },
   { key: 'about', label: '关于', icon: Info },
-  { key: 'desktoppet', label: '化身', icon: Cat },
+  { key: 'desktoppet', label: '化身', icon: PersonStanding },
 ]
 
 export default function Sidebar({ currentPage, onNavigate, collapsed, onToggle }: SidebarProps) {
