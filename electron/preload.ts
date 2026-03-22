@@ -151,6 +151,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   desktopPet: {
     getConfig: () => ipcRenderer.invoke('desktopPet:getConfig'),
     setSize: (size: number) => ipcRenderer.invoke('desktopPet:setSize', size),
+    saveChromakeyConfig: (config: { color: string; similarity: number; blend: number }) =>
+      ipcRenderer.invoke('desktopPet:saveChromakeyConfig', config),
     showContextMenu: () => ipcRenderer.invoke('desktopPet:showContextMenu'),
     toggle: (enable: boolean) => ipcRenderer.invoke('desktopPet:toggle', enable),
     startDrag: () => ipcRenderer.invoke('desktopPet:startDrag'),

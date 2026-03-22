@@ -8,6 +8,7 @@ import SkillsPage from '@/pages/SkillsPage'
 import AgentPage from '@/pages/AgentPage'
 import PersonaPage from '@/pages/PersonaPage'
 import AboutPage from '@/pages/AboutPage'
+import DesktopPetConfigPage from '@/pages/DesktopPetConfigPage'
 import IntegrationsPage from '@/pages/IntegrationsPage'
 import CronPage from '@/pages/CronPage'
 import ClipboardPage from '@/pages/ClipboardPage'
@@ -105,6 +106,9 @@ export default function App() {
             </KeepAlive>
             <KeepAlive active={currentPage === 'about'}>
               <AboutPage onNavigate={setCurrentPage} />
+            </KeepAlive>
+            <KeepAlive active={currentPage === 'desktoppet'}>
+              <DesktopPetConfigPage />
             </KeepAlive>
             </ErrorBoundary>
           </main>

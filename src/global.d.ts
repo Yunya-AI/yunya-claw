@@ -217,8 +217,9 @@ interface ElectronAPI {
     updateAnalysis: (id: string, analysis: string) => Promise<{ success: boolean; error?: string }>
   }
   desktopPet: {
-    getConfig: () => Promise<{ success: boolean; config?: { enabled: boolean; size: number; useCustomActions?: boolean }; error?: string }>
+    getConfig: () => Promise<{ success: boolean; config?: { enabled: boolean; size: number; useCustomActions?: boolean; chromakeyColor?: string; chromakeySimilarity?: number; chromakeyBlend?: number }; error?: string }>
     setSize: (size: number) => Promise<{ success: boolean; error?: string }>
+    saveChromakeyConfig: (config: { color: string; similarity: number; blend: number }) => Promise<{ success: boolean; error?: string }>
     showContextMenu: () => Promise<{ success: boolean; error?: string }>
     toggle: (enable: boolean) => Promise<{ success: boolean; enabled?: boolean; error?: string }>
     startDrag: () => Promise<{ success: boolean }>

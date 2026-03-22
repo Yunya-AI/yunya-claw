@@ -37,6 +37,10 @@ const defaultConfig = {
   x: undefined as number | undefined,
   y: undefined as number | undefined,
   useCustomActions: false, // 是否使用自定义动作
+  // 抠图参数
+  chromakeyColor: '0x00FF00', // 绿色
+  chromakeySimilarity: 0.27,  // 相似度
+  chromakeyBlend: 0.1,        // 混合度
 }
 
 // 读取配置
@@ -213,6 +217,19 @@ export function createPetWindow(mainWindow: BrowserWindow | null): BrowserWindow
     }
   })
 
+  // 监听窗口尺寸变化，防止意外缩放
+  petWindow.on('resize', () => {
+    if (petWindow && !petWindow.isDestroyed()) {
+      const config = getPetConfig()
+      const currentSize = petWindow.getSize()
+      const expectedSize = config.size || 128
+      if (currentSize[0] !== expectedSize || currentSize[1] !== expectedSize) {
+        console.log('[DesktopPet] 检测到意外的尺寸变化，从', currentSize, '恢复为:', expectedSize)
+        petWindow.setSize(expectedSize, expectedSize)
+      }
+    }
+  })
+
   return petWindow
 }
 
@@ -282,7 +299,15 @@ export function registerDesktopPetIpc(): void {
       const currentPos = screen.getCursorScreenPoint()
       const dx = currentPos.x - dragStartPos.x
       const dy = currentPos.y - dragStartPos.y
-      petWindow.setPosition(windowStartPos[0] + dx, windowStartPos[1] + dy)
+      // 使用 setBounds 同时设置位置和尺寸，避免 Windows 下透明窗口的尺寸漂移问题
+      const config = getPetConfig()
+      const size = config.size || 128
+      petWindow.setBounds({
+        x: windowStartPos[0] + dx,
+        y: windowStartPos[1] + dy,
+        width: size,
+        height: size,
+      })
     }
     return { success: true }
   })
@@ -299,10 +324,24 @@ export function registerDesktopPetIpc(): void {
   })
 
   ipcMain.handle('desktopPet:setSize', (_event, size: number) => {
+    console.log('[DesktopPet] setSize called:', size, 'petWindow exists:', !!petWindow)
     savePetConfig({ size })
     if (petWindow && !petWindow.isDestroyed()) {
+      // 先设置最小尺寸为0，允许缩小
+      petWindow.setMinimumSize(1, 1)
       petWindow.setSize(size, size)
+      console.log('[DesktopPet] Window size updated to:', size)
     }
+    return { success: true }
+  })
+
+  ipcMain.handle('desktopPet:saveChromakeyConfig', (_event, config: { color: string; similarity: number; blend: number }) => {
+    console.log('[DesktopPet] saveChromakeyConfig called:', config)
+    savePetConfig({
+      chromakeyColor: config.color,
+      chromakeySimilarity: config.similarity,
+      chromakeyBlend: config.blend,
+    })
     return { success: true }
   })
 
@@ -352,11 +391,11 @@ export function registerDesktopPetIpc(): void {
         },
       },
       {
-        label: '大 (200px)',
+        label: '大 (256px)',
         click: () => {
-          savePetConfig({ size: 200 })
+          savePetConfig({ size: 256 })
           if (petWindow && !petWindow.isDestroyed()) {
-            petWindow.setSize(200, 200)
+            petWindow.setSize(256, 256)
           }
         },
       },
@@ -944,9 +983,14 @@ export function registerDesktopPetIpc(): void {
           const videoPath = path.join(imagesDir, `video-${taskId}.mp4`)
           fs.writeFileSync(videoPath, videoBuffer)
 
-          // 转换为 GIF
+          // 转换为 GIF（使用配置的抠图参数）
           const gifPath = path.join(imagesDir, `pet-${taskId}.gif`)
-          const gifResult = await convertVideoToGif(videoPath, gifPath)
+          const config = getPetConfig()
+          const gifResult = await convertVideoToGif(videoPath, gifPath, {
+            color: config.chromakeyColor,
+            similarity: config.chromakeySimilarity,
+            blend: config.chromakeyBlend,
+          })
 
           // 删除临时视频文件
           if (fs.existsSync(videoPath)) {
@@ -976,7 +1020,15 @@ export function registerDesktopPetIpc(): void {
 }
 
 // 视频转 GIF（使用 ffmpeg，带绿幕抠图）
-async function convertVideoToGif(videoPath: string, outputPath: string): Promise<{ success: boolean; path?: string; error?: string }> {
+async function convertVideoToGif(
+  videoPath: string,
+  outputPath: string,
+  options?: { color?: string; similarity?: number; blend?: number }
+): Promise<{ success: boolean; path?: string; error?: string }> {
+  const color = options?.color || '0x00FF00'
+  const similarity = options?.similarity ?? 0.27
+  const blend = options?.blend ?? 0.1
+
   return new Promise((resolve) => {
     // 生成调色板以提高 GIF 质量
     const palettePath = videoPath.replace('.mp4', '-palette.png')
@@ -985,7 +1037,7 @@ async function convertVideoToGif(videoPath: string, outputPath: string): Promise
     // 使用 chroma key 将绿色变透明
     const paletteProcess = spawn('ffmpeg', [
       '-i', videoPath,
-      '-vf', 'fps=10,scale=512:-1:flags=lanczos,chromakey=0x00FF00:0.27:0.1,palettegen=reserve_transparent=1',
+      '-vf', `fps=10,scale=512:-1:flags=lanczos,chromakey=${color}:${similarity}:${blend},palettegen=reserve_transparent=1`,
       '-y',
       palettePath,
     ])
@@ -1001,7 +1053,7 @@ async function convertVideoToGif(videoPath: string, outputPath: string): Promise
         console.log('[DesktopPet] 调色板生成失败，尝试直接转换')
         const directProcess = spawn('ffmpeg', [
           '-i', videoPath,
-          '-vf', 'fps=10,scale=512:-1:flags=lanczos,chromakey=0x00FF00:0.27:0.1',
+          '-vf', `fps=10,scale=512:-1:flags=lanczos,chromakey=${color}:${similarity}:${blend}`,
           '-y',
           outputPath,
         ])
@@ -1020,7 +1072,7 @@ async function convertVideoToGif(videoPath: string, outputPath: string): Promise
       const gifProcess = spawn('ffmpeg', [
         '-i', videoPath,
         '-i', palettePath,
-        '-lavfi', '[0:v]fps=10,scale=512:-1:flags=lanczos,chromakey=0x00FF00:0.27:0.1[s];[s][1:v]paletteuse=alpha_threshold=128',
+        '-lavfi', `[0:v]fps=10,scale=512:-1:flags=lanczos,chromakey=${color}:${similarity}:${blend}[s];[s][1:v]paletteuse=alpha_threshold=128`,
         '-loop', '0',
         '-y',
         outputPath,

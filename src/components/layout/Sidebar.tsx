@@ -10,10 +10,11 @@ import {
   Info,
   Plug2,
   Clock,
+  Cat,
 } from 'lucide-react'
 import { useAppearance } from '@/contexts/AppearanceContext'
 
-export type PageKey = 'agents' | 'dashboard' | 'clipboard' | 'integrations' | 'cron' | 'persona' | 'models' | 'settings' | 'skills' | 'about'
+export type PageKey = 'agents' | 'dashboard' | 'clipboard' | 'integrations' | 'cron' | 'persona' | 'models' | 'settings' | 'skills' | 'about' | 'desktoppet'
 
 /** AI 图标：显示 "AI" 两字，颜色继承父级（未选中灰、选中橙） */
 function AIIcon({ className }: { className?: string }) {
@@ -39,6 +40,7 @@ const navItems: { key: PageKey; label: string; icon: React.ComponentType<{ class
   { key: 'models', label: '模型', icon: AIIcon },
   { key: 'settings', label: '设置', icon: Settings },
   { key: 'about', label: '关于', icon: Info },
+  { key: 'desktoppet', label: '桌宠', icon: Cat },
 ]
 
 export default function Sidebar({ currentPage, onNavigate, collapsed, onToggle }: SidebarProps) {
@@ -65,23 +67,27 @@ export default function Sidebar({ currentPage, onNavigate, collapsed, onToggle }
 
       {/* 导航 */}
       <nav className="flex-1 px-2 py-2 space-y-1">
-        {navItems.map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => onNavigate(key)}
-            className={cn(
-              'w-full flex items-center gap-3 rounded-lg text-sm transition-colors cursor-pointer',
-              collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5',
-              currentPage === key
-                ? 'bg-primary/15 text-primary font-medium'
-                : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
-            )}
-            title={collapsed ? label : undefined}
-          >
-            <Icon className="w-4.5 h-4.5 shrink-0" />
-            {!collapsed && <span className="whitespace-nowrap">{label}</span>}
-          </button>
-        ))}
+        {navItems.map(({ key, label, icon: Icon }) => {
+          // 桌宠菜单使用应用名称
+          const displayLabel = key === 'desktoppet' ? appName : label
+          return (
+            <button
+              key={key}
+              onClick={() => onNavigate(key)}
+              className={cn(
+                'w-full flex items-center gap-3 rounded-lg text-sm transition-colors cursor-pointer',
+                collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5',
+                currentPage === key
+                  ? 'bg-primary/15 text-primary font-medium'
+                  : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
+              )}
+              title={collapsed ? displayLabel : undefined}
+            >
+              <Icon className="w-4.5 h-4.5 shrink-0" />
+              {!collapsed && <span className="whitespace-nowrap">{displayLabel}</span>}
+            </button>
+          )
+        })}
       </nav>
 
       {/* 收起按钮 */}

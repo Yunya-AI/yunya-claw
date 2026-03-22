@@ -430,8 +430,8 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
                       })
 
                       if (res?.success && res.gifDataUrl) {
-                        // 从描述生成动作名称
-                        const actionName = prompt.substring(0, 10).replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')
+                        // 使用完整描述作为动作名称
+                        const actionName = prompt.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')
                         const newAction: PetAction = {
                           name: `${actionName}_${Date.now()}_${i}`,
                           frames: [res.gifDataUrl],
