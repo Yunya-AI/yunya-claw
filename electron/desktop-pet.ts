@@ -985,7 +985,7 @@ async function convertVideoToGif(videoPath: string, outputPath: string): Promise
     // 使用 chroma key 将绿色变透明
     const paletteProcess = spawn('ffmpeg', [
       '-i', videoPath,
-      '-vf', 'fps=10,scale=128:-1:flags=lanczos,chromakey=0x00FF00:0.27:0.0,palettegen=reserve_transparent=1',
+      '-vf', 'fps=10,scale=512:-1:flags=lanczos,chromakey=0x00FF00:0.27:0.1,palettegen=reserve_transparent=1',
       '-y',
       palettePath,
     ])
@@ -1001,7 +1001,7 @@ async function convertVideoToGif(videoPath: string, outputPath: string): Promise
         console.log('[DesktopPet] 调色板生成失败，尝试直接转换')
         const directProcess = spawn('ffmpeg', [
           '-i', videoPath,
-          '-vf', 'fps=10,scale=128:-1:flags=lanczos,chromakey=0x00FF00:0.27:0.0',
+          '-vf', 'fps=10,scale=512:-1:flags=lanczos,chromakey=0x00FF00:0.27:0.1',
           '-y',
           outputPath,
         ])
@@ -1020,7 +1020,7 @@ async function convertVideoToGif(videoPath: string, outputPath: string): Promise
       const gifProcess = spawn('ffmpeg', [
         '-i', videoPath,
         '-i', palettePath,
-        '-lavfi', '[0:v]fps=10,scale=128:-1:flags=lanczos,chromakey=0x00FF00:0.27:0.0[s];[s][1:v]paletteuse=alpha_threshold=128',
+        '-lavfi', '[0:v]fps=10,scale=512:-1:flags=lanczos,chromakey=0x00FF00:0.27:0.1[s];[s][1:v]paletteuse=alpha_threshold=128',
         '-loop', '0',
         '-y',
         outputPath,
