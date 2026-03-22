@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Plus, Minus, Trash2, Image, Play, RefreshCw, Info, ChevronDown, ChevronUp, Wand2, Loader2, MonitorPlay } from 'lucide-react'
+import { Plus, Minus, Trash2, Image, Play, RefreshCw, Info, ChevronDown, ChevronUp, Wand2, Loader2, MonitorPlay, Eye, EyeOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface PetAction {
@@ -7,6 +7,7 @@ interface PetAction {
   frames: string[]
   duration: number
   repeat?: number
+  hidden?: boolean
 }
 
 interface DesktopPetConfigProps {
@@ -526,7 +527,7 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
               className="w-full bg-input border border-border rounded px-3 py-2 text-sm"
             >
               <option value="">选择动作...</option>
-              {actions.map((action, i) => (
+              {actions.filter(a => !a.hidden).map((action, i) => (
                 <option key={i} value={action.name}>{action.name}</option>
               ))}
             </select>
@@ -612,6 +613,16 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
                     title="在桌宠窗口播放"
                   >
                     <MonitorPlay className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleUpdateAction(actionIndex, 'hidden', !action.hidden)}
+                    className={cn(
+                      "p-2 rounded transition-colors",
+                      action.hidden ? "bg-muted text-muted-foreground" : "hover:bg-muted"
+                    )}
+                    title={action.hidden ? "取消隐藏（在预览列表显示）" : "隐藏（不在预览列表显示）"}
+                  >
+                    {action.hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                   <button
                     onClick={() => handleRemoveAction(actionIndex)}

@@ -14,6 +14,7 @@ interface PetAction {
   frames: string[]
   duration: number
   repeat?: number
+  hidden?: boolean
 }
 
 interface SkillData {

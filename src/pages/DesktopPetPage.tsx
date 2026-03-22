@@ -90,8 +90,9 @@ export default function DesktopPetPage() {
     }
   }, [])
 
-  // 获取当前使用的动作列表
-  const actions = (useCustom && customActions.length > 0) ? customActions : defaultActions
+  // 获取当前使用的动作列表（过滤掉隐藏的动作）
+  const allActions = (useCustom && customActions.length > 0) ? customActions : defaultActions
+  const actions = allActions.filter(a => !a.hidden)
 
   // 获取当前动作
   const getCurrentAction = useCallback((): PetAction => {
