@@ -34,7 +34,7 @@ export default function DesktopPetPage() {
           }
         }
       } catch (err) {
-        console.error('加载桌宠配置失败:', err)
+        console.error('加载化身配置失败:', err)
       }
     }
     loadConfig()
@@ -52,7 +52,7 @@ export default function DesktopPetPage() {
       }
     })
 
-    // 监听在桌宠窗口播放指定动作的事件
+    // 监听在化身窗口播放指定动作的事件
     const unsubscribePlayAction = window.electronAPI?.desktopPet?.onPlayAction?.((action) => {
       console.log('[DesktopPetPage] 收到播放动作事件:', action.name)
       // 添加到自定义动作列表（如果不存在）

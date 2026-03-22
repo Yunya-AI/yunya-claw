@@ -17,7 +17,7 @@ export default function DesktopPetConfigPage() {
     blend: 0.1,
   })
 
-  // 加载桌宠状态
+  // 加载化身状态
   useEffect(() => {
     loadPetState()
   }, [])
@@ -38,7 +38,7 @@ export default function DesktopPetConfigPage() {
         }
       }
     } catch (err) {
-      console.error('加载桌宠状态失败:', err)
+      console.error('加载化身状态失败:', err)
     }
   }
 
@@ -50,7 +50,7 @@ export default function DesktopPetConfigPage() {
         setPetEnabled(res.enabled ?? enable)
       }
     } catch (err) {
-      console.error('切换桌宠状态失败:', err)
+      console.error('切换化身状态失败:', err)
     }
   }
 
@@ -61,7 +61,7 @@ export default function DesktopPetConfigPage() {
       console.log('[DesktopPetConfigPage] setSize result:', res)
       setPetSize(size)
     } catch (err) {
-      console.error('设置桌宠大小失败:', err)
+      console.error('设置化身大小失败:', err)
     }
   }
 
@@ -83,7 +83,7 @@ export default function DesktopPetConfigPage() {
       <div className="shrink-0 px-6 py-4 border-b border-border">
         <div className="flex items-center gap-3">
           <Cat className="w-5 h-5 text-primary" />
-          <h1 className="text-lg font-semibold">桌宠</h1>
+          <h1 className="text-lg font-semibold">化身</h1>
         </div>
       </div>
 
@@ -94,7 +94,7 @@ export default function DesktopPetConfigPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Power className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-medium">启用桌宠</span>
+              <span className="text-sm font-medium">启用化身</span>
             </div>
             <button
               onClick={() => handleTogglePet(!petEnabled)}

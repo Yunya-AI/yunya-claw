@@ -217,7 +217,7 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
         >
           <div className="flex items-center gap-2">
             <Info className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm font-medium">桌宠形象规范说明</span>
+            <span className="text-sm font-medium">化身形象规范说明</span>
           </div>
           {expandedSpec ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
         </button>
@@ -226,7 +226,7 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
           <div className="px-4 pb-4 space-y-4 text-sm text-muted-foreground border-t border-border pt-4">
             <div>
               <h4 className="font-medium text-foreground mb-2">动作（Action）定义</h4>
-              <p>一个桌宠可以包含多个动作（如 idle 闲置、happy 开心、sleep 睡觉等），点击桌宠时会随机切换动作。</p>
+              <p>一个化身可以包含多个动作（如 idle 闲置、happy 开心、sleep 睡觉等），点击化身时会随机切换动作。</p>
             </div>
 
             <div>
@@ -606,11 +606,11 @@ export default function DesktopPetConfig({ onSaved }: DesktopPetConfigProps) {
                     onClick={async () => {
                       const res = await window.electronAPI?.desktopPet?.playAction(action.name)
                       if (!res?.success) {
-                        console.error('在桌宠播放失败:', res?.error)
+                        console.error('在化身播放失败:', res?.error)
                       }
                     }}
                     className="p-2 rounded hover:bg-primary/20 text-primary transition-colors"
-                    title="在桌宠窗口播放"
+                    title="在化身窗口播放"
                   >
                     <MonitorPlay className="w-4 h-4" />
                   </button>

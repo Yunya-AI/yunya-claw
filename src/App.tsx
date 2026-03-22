@@ -42,7 +42,7 @@ export default function App() {
   const [configVersion, setConfigVersion] = useState(0)
   const handleConfigSaved = useCallback(() => setConfigVersion(v => v + 1), [])
 
-  // 桌宠模式：设置透明背景
+  // 化身模式：设置透明背景
   useEffect(() => {
     if (isDesktopPetMode) {
       document.body.classList.add('desktop-pet-mode')

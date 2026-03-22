@@ -40,7 +40,7 @@ const navItems: { key: PageKey; label: string; icon: React.ComponentType<{ class
   { key: 'models', label: '模型', icon: AIIcon },
   { key: 'settings', label: '设置', icon: Settings },
   { key: 'about', label: '关于', icon: Info },
-  { key: 'desktoppet', label: '桌宠', icon: Cat },
+  { key: 'desktoppet', label: '化身', icon: Cat },
 ]
 
 export default function Sidebar({ currentPage, onNavigate, collapsed, onToggle }: SidebarProps) {
@@ -68,7 +68,7 @@ export default function Sidebar({ currentPage, onNavigate, collapsed, onToggle }
       {/* 导航 */}
       <nav className="flex-1 px-2 py-2 space-y-1">
         {navItems.map(({ key, label, icon: Icon }) => {
-          // 桌宠菜单使用应用名称
+          // 化身菜单使用应用名称
           const displayLabel = key === 'desktoppet' ? appName : label
           return (
             <button

@@ -437,12 +437,12 @@ export function registerDesktopPetIpc(): void {
     saveCustomActions(actions)
     // 更新配置使用自定义动作
     savePetConfig({ useCustomActions: actions.length > 0 })
-    // 通知桌宠窗口刷新配置
+    // 通知化身窗口刷新配置
     if (petWindow && !petWindow.isDestroyed()) {
-      console.log('[DesktopPet] 发送动作更新事件到桌宠窗口')
+      console.log('[DesktopPet] 发送动作更新事件到化身窗口')
       petWindow.webContents.send('desktopPet:actionsUpdated', { actions, useCustomActions: actions.length > 0 })
     } else {
-      console.log('[DesktopPet] 桌宠窗口不存在，跳过通知')
+      console.log('[DesktopPet] 化身窗口不存在，跳过通知')
     }
     return { success: true }
   })
@@ -488,21 +488,21 @@ export function registerDesktopPetIpc(): void {
     return { success: true, available }
   })
 
-  // 在桌宠窗口播放指定动作
+  // 在化身窗口播放指定动作
   ipcMain.handle('desktopPet:playAction', (_event, actionName: string) => {
     if (petWindow && !petWindow.isDestroyed()) {
       // 获取自定义动作
       const actions = getCustomActions()
       const action = actions.find(a => a.name === actionName)
       if (action) {
-        console.log('[DesktopPet] 在桌宠窗口播放动作:', actionName)
+        console.log('[DesktopPet] 在化身窗口播放动作:', actionName)
         petWindow.webContents.send('desktopPet:playAction', action)
         return { success: true }
       } else {
         return { success: false, error: '未找到该动作' }
       }
     }
-    return { success: false, error: '桌宠窗口未打开' }
+    return { success: false, error: '化身窗口未打开' }
   })
 
   // ========== 视频生成相关 ==========
