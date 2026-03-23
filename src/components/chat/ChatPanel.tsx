@@ -60,6 +60,24 @@ export default function ChatPanel({ sessionKey, agentId, agentModel, onAgentMode
     return () => clearInterval(t)
   }, [streaming, sessionKey])
 
+  /** 监听外部渠道（如微信、钉钉）触发的对话刷新事件 */
+  useEffect(() => {
+    if (!window.electronAPI?.gateway?.onChatRefresh) return
+    const unsubscribe = window.electronAPI.gateway.onChatRefresh((data) => {
+      // sessionKey 匹配时刷新消息（未指定 sessionKey 时也刷新）
+      if (!data.sessionKey || data.sessionKey === sessionKey) {
+        // 重新加载 transcript
+        window.electronAPI.chat.loadOpenClawTranscript(sessionKey).then(res => {
+          if (res.success && res.messages && res.messages.length > 0) {
+            const transcriptMsgs = res.messages.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp }))
+            setMessages(transcriptMsgs)
+          }
+        }).catch(() => { /* 忽略 */ })
+      }
+    })
+    return unsubscribe
+  }, [sessionKey])
+
   // 统一初始化：config + session + transcript 并行加载；config 和 session 就绪后立即显示模型，不等待 transcript
   useEffect(() => {
     const init = async () => {

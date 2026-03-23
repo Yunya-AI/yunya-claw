@@ -277,6 +277,18 @@ export default function AgentPage({ onNavigateToModels, configVersion }: AgentPa
     }
   }, [activeAgentId, gatewayStatus, loadGatewaySessions])
 
+  /** 监听外部渠道（如微信、钉钉）触发的对话刷新事件 */
+  useEffect(() => {
+    if (!window.electronAPI?.gateway?.onChatRefresh) return
+    const unsubscribe = window.electronAPI.gateway.onChatRefresh((_data) => {
+      // 刷新当前 agent 的会话列表
+      if (activeAgentId) {
+        loadGatewaySessions(activeAgentId)
+      }
+    })
+    return unsubscribe
+  }, [activeAgentId, loadGatewaySessions])
+
   const handleNewSession = useCallback(() => {
     if (!activeAgentId) return
     const newKey = `agent:${activeAgentId}:session-${Date.now()}`
