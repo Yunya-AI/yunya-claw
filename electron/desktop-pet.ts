@@ -36,6 +36,67 @@ function getCharacterLibraryPath(): string {
   return path.join(configDir, 'character-library.json')
 }
 
+// 系统动作配置文件路径
+function getSystemActionsPath(): string {
+  const configDir = path.join(app.getPath('userData'), 'openclaw')
+  return path.join(configDir, 'desktop-pet-system-actions.json')
+}
+
+// 系统动作类型
+type SystemActionType = 'idle' | 'thinking' | 'responding' | 'error'
+
+// 系统动作配置
+interface SystemActionConfig {
+  type: SystemActionType
+  label: string
+  description: string
+  actionNames: string[]
+}
+
+// 默认系统动作配置
+const DEFAULT_SYSTEM_ACTIONS: SystemActionConfig[] = [
+  { type: 'idle', label: '闲置', description: 'Agent 无活动时的默认状态', actionNames: [] },
+  { type: 'thinking', label: '思考中', description: 'Agent 正在处理请求', actionNames: [] },
+  { type: 'responding', label: '回复中', description: 'Agent 正在输出回复', actionNames: [] },
+  { type: 'error', label: '错误', description: '发生错误时的状态', actionNames: [] },
+]
+
+// 获取系统动作配置
+export function getSystemActions(): SystemActionConfig[] {
+  try {
+    const systemActionsPath = getSystemActionsPath()
+    if (fs.existsSync(systemActionsPath)) {
+      const raw = fs.readFileSync(systemActionsPath, 'utf-8')
+      const saved = JSON.parse(raw) as SystemActionConfig[]
+      // 合并默认配置（确保所有类型都存在）
+      return DEFAULT_SYSTEM_ACTIONS.map(defaultAction => {
+        const savedAction = saved.find(a => a.type === defaultAction.type)
+        if (savedAction) {
+          return { ...defaultAction, actionNames: savedAction.actionNames }
+        }
+        return defaultAction
+      })
+    }
+  } catch (err) {
+    console.error('[DesktopPet] 读取系统动作配置失败:', err)
+  }
+  return DEFAULT_SYSTEM_ACTIONS
+}
+
+// 保存系统动作配置
+function saveSystemActions(systemActions: SystemActionConfig[]): void {
+  try {
+    const systemActionsPath = getSystemActionsPath()
+    const dir = path.dirname(systemActionsPath)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
+    fs.writeFileSync(systemActionsPath, JSON.stringify(systemActions, null, 2), 'utf-8')
+  } catch (err) {
+    console.error('[DesktopPet] 保存系统动作配置失败:', err)
+  }
+}
+
 // 形象库图片目录
 function getCharacterImagesDir(): string {
   const configDir = path.join(app.getPath('userData'), 'openclaw')
@@ -315,6 +376,14 @@ export function hidePetWindow(): void {
 // 宠物是否可见
 export function isPetWindowVisible(): boolean {
   return petWindow !== null && !petWindow.isDestroyed() && petWindow.isVisible()
+}
+
+// 发送 Agent 状态到宠物窗口
+export function sendAgentStateToPet(state: 'idle' | 'thinking' | 'responding' | 'error'): void {
+  if (petWindow && !petWindow.isDestroyed()) {
+    petWindow.webContents.send('desktopPet:agentState', { state })
+    console.log('[DesktopPet] 发送 Agent 状态到宠物窗口:', state, 'petWindow存在:', !!petWindow)
+  }
 }
 
 // 恢复宠物状态
@@ -619,6 +688,31 @@ export function registerDesktopPetIpc(): void {
     } catch (err) {
       console.error('[DesktopPet] 更新形象失败:', err)
       return { success: false, error: '更新形象失败' }
+    }
+  })
+
+  // ========== 系统动作相关 ==========
+
+  // 获取系统动作配置
+  ipcMain.handle('desktopPet:getSystemActions', () => {
+    const systemActions = getSystemActions()
+    return { success: true, systemActions }
+  })
+
+  // 保存系统动作配置
+  ipcMain.handle('desktopPet:saveSystemActions', (_event, systemActions: SystemActionConfig[]) => {
+    try {
+      saveSystemActions(systemActions)
+      console.log('[DesktopPet] 保存系统动作配置成功')
+      // 通知化身窗口更新系统动作配置
+      if (petWindow && !petWindow.isDestroyed()) {
+        petWindow.webContents.send('desktopPet:systemActionsUpdated', { systemActions })
+        console.log('[DesktopPet] 发送系统动作更新事件到化身窗口')
+      }
+      return { success: true }
+    } catch (err) {
+      console.error('[DesktopPet] 保存系统动作配置失败:', err)
+      return { success: false, error: '保存系统动作配置失败' }
     }
   })
 

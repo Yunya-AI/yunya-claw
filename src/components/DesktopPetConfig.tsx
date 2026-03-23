@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, memo } from 'react'
-import { Plus, Minus, Trash2, Image, Play, RefreshCw, Info, ChevronDown, ChevronUp, Wand2, Loader2, MonitorPlay, Eye, EyeOff } from 'lucide-react'
+import { Plus, Minus, Trash2, Image, Play, RefreshCw, Info, ChevronDown, ChevronUp, Wand2, Loader2, MonitorPlay, Eye, EyeOff, Settings2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface PetAction {
@@ -8,6 +8,18 @@ interface PetAction {
   duration: number
   repeat?: number
   hidden?: boolean
+  tags?: string[]
+}
+
+// 系统动作类型
+type SystemActionType = 'idle' | 'thinking' | 'responding' | 'error'
+
+// 系统动作配置
+interface SystemActionConfig {
+  type: SystemActionType
+  label: string
+  description: string
+  actionNames: string[]
 }
 
 interface DesktopPetConfigProps {
@@ -267,9 +279,10 @@ const ActionCard = memo(function ActionCard({
 
 export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onImageCleared }: DesktopPetConfigProps) {
   const [actions, setActions] = useState<PetAction[]>([])
+  const [systemActions, setSystemActions] = useState<SystemActionConfig[]>([])
   const [previewAction, setPreviewAction] = useState<string | null>(null)
   const [previewFrame, setPreviewFrame] = useState(0)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true) // 初始为 true，表示正在加载
   const [saving, setSaving] = useState(false)
   const [expandedSpec, setExpandedSpec] = useState(false)
   const previewRef = useRef<NodeJS.Timeout | null>(null)
@@ -367,6 +380,11 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
       if (res?.success && res.actions) {
         setActions(res.actions)
       }
+      // 加载系统动作配置
+      const systemRes = await window.electronAPI?.desktopPet?.getSystemActions()
+      if (systemRes?.success && systemRes.systemActions) {
+        setSystemActions(systemRes.systemActions)
+      }
     } catch (err) {
       console.error('加载自定义动作失败:', err)
     }
@@ -455,8 +473,11 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
   const handleSave = async () => {
     setSaving(true)
     try {
+      // 保存自定义动作
       const res = await window.electronAPI?.desktopPet?.saveCustomActions(actions)
       if (res?.success) {
+        // 同时保存系统动作配置
+        await window.electronAPI?.desktopPet?.saveSystemActions(systemActions)
         onSaved?.()
       }
     } catch (err) {
@@ -533,6 +554,102 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
             </div>
           </div>
         )}
+      </div>
+
+      {/* 系统动作配置 */}
+      <div className="bg-card rounded-lg border border-border p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Settings2 className="w-4 h-4 text-primary" />
+          <h3 className="text-sm font-medium">系统动作</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-4">
+          配置 Agent 状态对应的动作。当 Agent 进入某种状态时，化身会播放对应的动作动画。
+        </p>
+
+        <div className="space-y-4">
+          {systemActions.map((sysAction, sysIndex) => {
+            const availableActions = actions.filter(a => !a.hidden)
+            const selectedActions = sysAction.actionNames.map(name => actions.find(a => a.name === name)).filter(Boolean)
+
+            return (
+              <div key={sysAction.type} className="border border-border rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-medium">{sysAction.label}</h4>
+                    <p className="text-xs text-muted-foreground">{sysAction.description}</p>
+                  </div>
+                </div>
+
+                {/* 已选择的动作标签 */}
+                <div className="flex flex-wrap gap-1.5 min-h-[28px]">
+                  {selectedActions.length === 0 ? (
+                    <span className="text-xs text-muted-foreground">未配置动作</span>
+                  ) : (
+                    selectedActions.map(action => action && (
+                      <span
+                        key={action.name}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-primary/20 text-primary rounded-full"
+                      >
+                        {action.name}
+                        <button
+                          onClick={() => {
+                            setSystemActions(prev => prev.map((sa, i) => {
+                              if (i === sysIndex) {
+                                return {
+                                  ...sa,
+                                  actionNames: sa.actionNames.filter(n => n !== action.name)
+                                }
+                              }
+                              return sa
+                            }))
+                          }}
+                          className="hover:text-red-400 transition-colors"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+
+                {/* 添加动作下拉 */}
+                {availableActions.length > 0 && (
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const actionName = e.target.value
+                      if (actionName && !sysAction.actionNames.includes(actionName)) {
+                        setSystemActions(prev => prev.map((sa, i) => {
+                          if (i === sysIndex) {
+                            return {
+                              ...sa,
+                              actionNames: [...sa.actionNames, actionName]
+                            }
+                          }
+                          return sa
+                        }))
+                      }
+                      e.target.value = ""
+                    }}
+                    className="w-full bg-input border border-border rounded px-2 py-1.5 text-xs"
+                  >
+                    <option value="">+ 添加动作到「{sysAction.label}」</option>
+                    {availableActions
+                      .filter(a => !sysAction.actionNames.includes(a.name))
+                      .map(action => (
+                        <option key={action.name} value={action.name}>{action.name}</option>
+                      ))
+                    }
+                  </select>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        <p className="text-xs text-muted-foreground mt-3">
+          提示：如果某个状态未配置动作，系统会尝试根据动作名称或标签自动匹配。
+        </p>
       </div>
 
       {/* AI 自动生成动画 */}
@@ -878,6 +995,14 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
           {saving ? '保存中...' : '保存配置'}
         </button>
       </div>
+
+      {/* 加载指示器 - 固定在底部 */}
+      {loading && (
+        <div className="fixed bottom-0 left-0 right-0 bg-background/80 backdrop-blur-sm border-t border-border py-3 px-6 flex items-center justify-center gap-2 z-50">
+          <Loader2 className="w-4 h-4 animate-spin text-primary" />
+          <span className="text-sm text-muted-foreground">正在加载配置...</span>
+        </div>
+      )}
     </div>
   )
 }

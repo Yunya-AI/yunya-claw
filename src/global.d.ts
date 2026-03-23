@@ -15,6 +15,19 @@ interface PetAction {
   duration: number
   repeat?: number
   hidden?: boolean
+  // 动作标签，用于状态匹配
+  tags?: string[]
+}
+
+// 系统动作类型（对应 Agent 状态）
+type SystemActionType = 'idle' | 'thinking' | 'responding' | 'error'
+
+// 系统动作配置
+interface SystemActionConfig {
+  type: SystemActionType
+  label: string
+  description: string
+  actionNames: string[] // 关联的自定义动作名称列表
 }
 
 // 形象库项
@@ -95,6 +108,8 @@ interface ElectronAPI {
     onLog: (callback: (msg: string) => void) => () => void
     onError: (callback: (msg: string) => void) => () => void
     onStatus: (callback: (status: { running?: boolean; starting?: boolean; initializing?: boolean; code?: number; port?: number }) => void) => () => void
+    /** 监听对话刷新事件（从其他渠道触发） */
+    onChatRefresh: (callback: (data: { sessionKey?: string }) => void) => () => void
   }
   window: {
     minimize: () => Promise<void>
@@ -246,11 +261,18 @@ interface ElectronAPI {
     playAction: (actionName: string) => Promise<{ success: boolean; error?: string }>
     onActionsUpdated: (callback: (data: { actions: Array<{ name: string; frames: string[]; duration: number; repeat?: number }>; useCustomActions: boolean }) => void) => () => void
     onPlayAction: (callback: (action: { name: string; frames: string[]; duration: number }) => void) => () => void
+    // Agent 状态监听
+    onAgentState: (callback: (data: { state: 'idle' | 'thinking' | 'responding' | 'error' }) => void) => () => void
+    // 系统动作更新监听
+    onSystemActionsUpdated: (callback: (data: { systemActions: SystemActionConfig[] }) => void) => () => void
     // 形象库
     getCharacterLibrary: () => Promise<{ success: boolean; characters: CharacterItem[]; error?: string }>
     addCharacter: (character: { name: string; imageDataUrl: string }) => Promise<{ success: boolean; character?: CharacterItem; error?: string }>
     deleteCharacter: (characterId: string) => Promise<{ success: boolean; error?: string }>
     updateCharacter: (characterId: string, updates: { name?: string; imageDataUrl?: string }) => Promise<{ success: boolean; character?: CharacterItem; error?: string }>
+    // 系统动作
+    getSystemActions: () => Promise<{ success: boolean; systemActions: SystemActionConfig[] }>
+    saveSystemActions: (systemActions: SystemActionConfig[]) => Promise<{ success: boolean; error?: string }>
   }
   lifecycle: {
     onStep: (callback: (data: { phase: 'starting' | 'stopping'; step: string }) => void) => () => void

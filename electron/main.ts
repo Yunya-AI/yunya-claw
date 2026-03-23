@@ -10,7 +10,7 @@ import { ensurePlugin } from './bundled-plugins'
 import { ensureBundledSkills } from './bundled-skills'
 import { runAllMigrations } from './config-migration'
 import { ClipboardMonitor, registerClipboardIpc, registerQuickPasteShortcut, unregisterQuickPasteShortcut, setClipboardMonitorInstance } from './clipboard-monitor'
-import { restorePetState, registerDesktopPetIpc } from './desktop-pet'
+import { restorePetState, registerDesktopPetIpc, sendAgentStateToPet } from './desktop-pet'
 import { stripUserMessageForDisplay } from '../src/lib/chat-utils'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const archiver = require('archiver') as (format: string, options?: { zlib?: { level?: number } }) => {
@@ -61,6 +61,11 @@ let clipboardMonitor: ClipboardMonitor | null = null
 let gatewayProcess: ChildProcess | null = null
 let gatewayStarting = false
 let gatewayPort = 18789
+
+/** OpenClaw Agent 状态类型 */
+type AgentState = 'idle' | 'thinking' | 'responding' | 'error'
+let currentAgentState: AgentState = 'idle'
+let gatewayEventWs: import('ws').WebSocket | null = null
 
 /** 接入相关子进程（ensurePlugin、runChannelsAdd），退出时统一清理避免残留 */
 const integrationChildren = new Set<ChildProcess>()
@@ -1791,6 +1796,8 @@ function startGateway(): Promise<void> {
             gatewayStarting = false
             console.log(`[Gateway] 检测到实际端口: ${gatewayPort}`)
             mainWindow?.webContents.send('gateway:status', { running: true, port: gatewayPort })
+            // 启动 Gateway 事件监听
+            startGatewayEventListener()
             if (!resolved) { resolved = true; resolve() }
           }
         }
@@ -1823,6 +1830,9 @@ function startGateway(): Promise<void> {
 }
 
 function stopGateway(): Promise<void> {
+  // 停止事件监听
+  stopGatewayEventListener()
+
   if (!gatewayProcess) return Promise.resolve()
   const proc = gatewayProcess
   gatewayProcess = null
@@ -1930,6 +1940,152 @@ function gatewayRpc(method: string, params: Record<string, unknown> = {}): Promi
       if (!settled) { settled = true; clearTimeout(timer); reject(new Error('WebSocket 连接关闭')) }
     })
   })
+}
+
+// ---- Gateway 事件监听（用于桌面宠物状态感知） ----
+
+/** 启动 Gateway 事件监听 WebSocket */
+function startGatewayEventListener() {
+  if (gatewayEventWs) return // 已连接
+
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const WS = require('ws') as { new(url: string): import('ws').WebSocket }
+  const url = `ws://127.0.0.1:${gatewayPort}`
+
+  try {
+    gatewayEventWs = new WS(url)
+
+    gatewayEventWs.on('open', () => {
+      const token = getGatewayAuthToken()
+      gatewayEventWs?.send(JSON.stringify({
+        type: 'req',
+        id: 'connect',
+        method: 'connect',
+        params: {
+          minProtocol: 3,
+          maxProtocol: 3,
+          client: {
+            id: 'cli', // 使用 CLI 客户端 ID，不需要 origin 验证
+            displayName: 'YunyaClaw Pet Listener',
+            version: '1.0.0',
+            platform: process.platform,
+            mode: 'backend',
+          },
+          role: 'operator',
+          scopes: ['operator.read'],
+          ...(token ? { auth: { token } } : {}),
+        },
+      }))
+
+      // 订阅 agent 事件
+      gatewayEventWs?.send(JSON.stringify({
+        type: 'req',
+        id: 'subscribe-agent',
+        method: 'subscribe',
+        params: { events: ['agent', 'chat', 'presence'] },
+      }))
+    })
+
+    gatewayEventWs.on('message', (raw: Buffer | string) => {
+      try {
+        const msg = JSON.parse(raw.toString())
+
+        // 处理事件
+        if (msg.type === 'event') {
+          handleGatewayEvent(msg.event, msg.payload)
+        }
+      } catch { /* 忽略非 JSON */ }
+    })
+
+    gatewayEventWs.on('error', (err: Error) => {
+      console.error('[GatewayEvent] WebSocket 错误:', err.message)
+    })
+
+    gatewayEventWs.on('close', () => {
+      console.log('[GatewayEvent] WebSocket 连接关闭')
+      gatewayEventWs = null
+      // 5秒后尝试重连
+      setTimeout(() => {
+        if (gatewayProcess && !gatewayEventWs) {
+          startGatewayEventListener()
+        }
+      }, 5000)
+    })
+  } catch (err) {
+    console.error('[GatewayEvent] 启动失败:', err)
+    gatewayEventWs = null
+  }
+}
+
+/** 停止 Gateway 事件监听 */
+function stopGatewayEventListener() {
+  if (gatewayEventWs) {
+    gatewayEventWs.close()
+    gatewayEventWs = null
+  }
+}
+
+/** 处理 Gateway 事件 */
+function handleGatewayEvent(event: string, payload: Record<string, unknown>) {
+  // 提取 sessionKey（如果有的话）
+  const sessionKey = payload?.sessionKey as string | undefined
+
+  // 监听 agent 事件，检测 lifecycle 状态
+  if (event === 'agent') {
+    const stream = payload?.stream as string
+    const data = payload?.data as Record<string, unknown> | undefined
+
+    if (stream === 'lifecycle' && data) {
+      const phase = data.phase as string
+
+      if (phase === 'start') {
+        updateAgentState('thinking', sessionKey)
+      } else if (phase === 'end') {
+        updateAgentState('idle', sessionKey)
+      } else if (phase === 'error') {
+        updateAgentState('error', sessionKey)
+        // 3秒后恢复 idle
+        setTimeout(() => updateAgentState('idle', sessionKey), 3000)
+      }
+    }
+
+    // 监听 assistant 流（AI 正在回复）
+    if (stream === 'assistant') {
+      if (currentAgentState === 'thinking') {
+        updateAgentState('responding', sessionKey)
+      }
+    }
+  }
+
+  // 监听 chat 事件
+  if (event === 'chat') {
+    const state = payload?.state as string
+    if (state === 'delta' && currentAgentState === 'thinking') {
+      updateAgentState('responding', sessionKey)
+    } else if (state === 'final' || state === 'error') {
+      updateAgentState('idle', sessionKey)
+    }
+  }
+}
+
+/** 更新 Agent 状态并通知桌面宠物 */
+function updateAgentState(newState: AgentState, sessionKey?: string) {
+  if (currentAgentState === newState) return
+  const previousState = currentAgentState
+  currentAgentState = newState
+  console.log('[AgentState]', newState)
+
+  // 通知桌面宠物窗口（使用导出的函数）
+  sendAgentStateToPet(newState)
+  // 也通知主窗口（可选）
+  mainWindow?.webContents.send('desktopPet:agentState', { state: newState })
+
+  // 当从 idle 变为 thinking/responding 或从 responding 变为 idle 时，
+  // 通知主窗口刷新对话（可能是外部消息）
+  if ((previousState === 'idle' && (newState === 'thinking' || newState === 'responding')) ||
+      (previousState === 'responding' && newState === 'idle')) {
+    mainWindow?.webContents.send('gateway:chatRefresh', { sessionKey })
+  }
 }
 
 // ---- IPC Handlers ----

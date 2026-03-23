@@ -21,6 +21,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('gateway:status', wrapped)
       return () => ipcRenderer.removeListener('gateway:status', wrapped)
     },
+    // 新增：监听对话刷新事件（从其他渠道触发)
+    onChatRefresh: (callback: (data: { sessionKey?: string }) => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, data: { sessionKey?: string }) => callback(data)
+      ipcRenderer.on('gateway:chatRefresh', wrapped)
+      return () => ipcRenderer.removeListener('gateway:chatRefresh', wrapped)
+    }
   },
   window: {
     minimize: () => ipcRenderer.invoke('window:minimize'),
@@ -184,6 +190,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('desktopPet:playAction', wrapped)
       return () => ipcRenderer.removeListener('desktopPet:playAction', wrapped)
     },
+    // Agent 状态监听
+    onAgentState: (callback: (data: { state: 'idle' | 'thinking' | 'responding' | 'error' }) => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, data: { state: 'idle' | 'thinking' | 'responding' | 'error' }) => callback(data)
+      ipcRenderer.on('desktopPet:agentState', wrapped)
+      return () => ipcRenderer.removeListener('desktopPet:agentState', wrapped)
+    },
+    // 系统动作更新监听
+    onSystemActionsUpdated: (callback: (data: { systemActions: Array<{ type: string; label: string; description: string; actionNames: string[] }> }) => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, data: { systemActions: Array<{ type: string; label: string; description: string; actionNames: string[] }> }) => callback(data)
+      ipcRenderer.on('desktopPet:systemActionsUpdated', wrapped)
+      return () => ipcRenderer.removeListener('desktopPet:systemActionsUpdated', wrapped)
+    },
     // 形象库
     getCharacterLibrary: () => ipcRenderer.invoke('desktopPet:getCharacterLibrary'),
     addCharacter: (character: { name: string; imageDataUrl: string }) =>
@@ -191,6 +209,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     deleteCharacter: (characterId: string) => ipcRenderer.invoke('desktopPet:deleteCharacter', characterId),
     updateCharacter: (characterId: string, updates: { name?: string; imageDataUrl?: string }) =>
       ipcRenderer.invoke('desktopPet:updateCharacter', characterId, updates),
+    // 系统动作
+    getSystemActions: () => ipcRenderer.invoke('desktopPet:getSystemActions'),
+    saveSystemActions: (systemActions: unknown[]) => ipcRenderer.invoke('desktopPet:saveSystemActions', systemActions),
   },
   lifecycle: {
     onStep: (callback: (data: { phase: 'starting' | 'stopping'; step: string }) => void) => {
