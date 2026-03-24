@@ -181,10 +181,10 @@ export function useDesktopPetPlayer(): UseDesktopPetPlayerResult {
 
     const loadConfig = async () => {
       try {
-        // 并行加载配置
+        // 并行加载配置（使用 getCustomActionsWithData 获取完整图片数据）
         const [configRes, actionsRes, systemActionsRes] = await Promise.all([
           window.electronAPI?.desktopPet?.getConfig(),
-          window.electronAPI?.desktopPet?.getCustomActions(),
+          window.electronAPI?.desktopPet?.getCustomActionsWithData?.() || window.electronAPI?.desktopPet?.getCustomActions(),
           window.electronAPI?.desktopPet?.getSystemActions(),
         ])
 

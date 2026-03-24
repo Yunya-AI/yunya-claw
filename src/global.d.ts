@@ -253,7 +253,9 @@ interface ElectronAPI {
     drag: () => Promise<{ success: boolean }>
     endDrag: () => Promise<{ success: boolean }>
     getCustomActions: () => Promise<{ success: boolean; actions: PetAction[] }>
-    saveCustomActions: (actions: PetAction[]) => Promise<{ success: boolean; error?: string }>
+    getCustomActionsWithData: () => Promise<{ success: boolean; actions: PetAction[] }>
+    getActionImage: (fileName: string) => Promise<{ success: boolean; dataUrl?: string; error?: string }>
+    saveCustomActions: (actions: PetAction[]) => Promise<{ success: boolean; actions?: PetAction[]; error?: string }>
     uploadImage: () => Promise<{ success: boolean; dataUrl?: string; error?: string }>
     saveImage: (base64Data: string) => Promise<{ success: boolean; path?: string; error?: string }>
     generateVideo: (params: { imageDataUrl: string; prompt?: string; duration?: number; aspectRatio?: string }) => Promise<{ success: boolean; gifPath?: string; gifDataUrl?: string; error?: string }>

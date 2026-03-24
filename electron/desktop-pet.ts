@@ -8,38 +8,60 @@ import { spawn } from 'node:child_process'
 // 桌面宠物窗口
 let petWindow: BrowserWindow | null = null
 
+// YunYa 基础目录
+function getYunyaDir(): string {
+  const configDir = path.join(app.getPath('userData'), 'openclaw', 'yunya')
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true })
+  }
+  return configDir
+}
+
+// 桌面宠物目录
+function getDesktopPetDir(): string {
+  const dir = path.join(getYunyaDir(), 'desktop-pet')
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
+  }
+  return dir
+}
+
 // 宠物配置文件路径
 function getPetConfigPath(): string {
-  const configDir = path.join(app.getPath('userData'), 'openclaw')
-  return path.join(configDir, 'desktop-pet.json')
+  return path.join(getDesktopPetDir(), 'config.json')
 }
 
-// 自定义动作配置文件路径
+// 自定义动作配置文件路径（轻量版，不含 base64）
 function getCustomActionsPath(): string {
-  const configDir = path.join(app.getPath('userData'), 'openclaw')
-  return path.join(configDir, 'desktop-pet-actions.json')
+  return path.join(getDesktopPetDir(), 'actions.json')
 }
 
-// 图片资源目录
-function getPetImagesDir(): string {
-  const configDir = path.join(app.getPath('userData'), 'openclaw')
-  const imagesDir = path.join(configDir, 'pet-images')
-  if (!fs.existsSync(imagesDir)) {
-    fs.mkdirSync(imagesDir, { recursive: true })
+// 自定义动作图片目录
+function getActionImagesDir(): string {
+  const dir = path.join(getDesktopPetDir(), 'action-images')
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
   }
-  return imagesDir
+  return dir
+}
+
+// 图片资源目录（保留用于其他用途）
+function getPetImagesDir(): string {
+  const dir = path.join(getDesktopPetDir(), 'images')
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
+  }
+  return dir
 }
 
 // 形象库配置文件路径
 function getCharacterLibraryPath(): string {
-  const configDir = path.join(app.getPath('userData'), 'openclaw')
-  return path.join(configDir, 'character-library.json')
+  return path.join(getDesktopPetDir(), 'character-library.json')
 }
 
 // 系统动作配置文件路径
 function getSystemActionsPath(): string {
-  const configDir = path.join(app.getPath('userData'), 'openclaw')
-  return path.join(configDir, 'desktop-pet-system-actions.json')
+  return path.join(getDesktopPetDir(), 'system-actions.json')
 }
 
 // 系统动作类型
@@ -99,12 +121,11 @@ function saveSystemActions(systemActions: SystemActionConfig[]): void {
 
 // 形象库图片目录
 function getCharacterImagesDir(): string {
-  const configDir = path.join(app.getPath('userData'), 'openclaw')
-  const imagesDir = path.join(configDir, 'character-images')
-  if (!fs.existsSync(imagesDir)) {
-    fs.mkdirSync(imagesDir, { recursive: true })
+  const dir = path.join(getDesktopPetDir(), 'character-images')
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
   }
-  return imagesDir
+  return dir
 }
 
 // 形象接口
@@ -185,15 +206,83 @@ function savePetConfig(config: Partial<typeof defaultConfig>): void {
   }
 }
 
-// 动作接口
+// 动作接口（轻量版，frames 存储文件名）
 interface PetAction {
   name: string
-  frames: string[]
+  frames: string[]  // 文件名或 emoji
   duration: number
   repeat?: number
+  hidden?: boolean
+  tags?: string[]
 }
 
-// 读取自定义动作
+// 动作接口（完整版，frames 存储 base64）
+interface PetActionWithData {
+  name: string
+  frames: string[]  // base64 或 emoji
+  duration: number
+  repeat?: number
+  hidden?: boolean
+  tags?: string[]
+}
+
+// 判断是否是图片数据（base64 或文件路径）
+function isImageFrame(frame: string): boolean {
+  return frame.startsWith('data:image') || frame.startsWith('file:') || frame.startsWith('http')
+}
+
+// 判断是否是文件引用（以 @ 开头表示是文件名）
+function isFileReference(frame: string): boolean {
+  return frame.startsWith('@file:')
+}
+
+// 保存 base64 图片到文件，返回文件引用
+function saveActionImage(base64Data: string, actionName: string, frameIndex: number): string | null {
+  try {
+    const matches = base64Data.match(/^data:image\/(\w+);base64,(.+)$/)
+    if (!matches) {
+      console.error('[DesktopPet] 无效的图片数据')
+      return null
+    }
+
+    const ext = matches[1] === 'gif' ? 'gif' : matches[1]
+    const data = matches[2]
+    const hash = crypto.createHash('md5').update(data).digest('hex').substring(0, 8)
+    const fileName = `${actionName}_${frameIndex}_${hash}.${ext}`
+    const imagesDir = getActionImagesDir()
+    const filePath = path.join(imagesDir, fileName)
+
+    // 如果文件已存在则直接返回
+    if (fs.existsSync(filePath)) {
+      return `@file:${fileName}`
+    }
+
+    fs.writeFileSync(filePath, Buffer.from(data, 'base64'))
+    return `@file:${fileName}`
+  } catch (err) {
+    console.error('[DesktopPet] 保存动作图片失败:', err)
+    return null
+  }
+}
+
+// 读取图片文件并返回 base64
+function loadActionImage(fileName: string): string | null {
+  try {
+    const filePath = path.join(getActionImagesDir(), fileName)
+    if (!fs.existsSync(filePath)) {
+      return null
+    }
+    const data = fs.readFileSync(filePath)
+    const ext = path.extname(fileName).slice(1).toLowerCase()
+    const mimeType = ext === 'svg' ? 'image/svg+xml' : `image/${ext}`
+    return `data:${mimeType};base64,${data.toString('base64')}`
+  } catch (err) {
+    console.error('[DesktopPet] 读取动作图片失败:', err)
+    return null
+  }
+}
+
+// 读取自定义动作（轻量版，不含图片数据）
 export function getCustomActions(): PetAction[] {
   try {
     const actionsPath = getCustomActionsPath()
@@ -207,17 +296,94 @@ export function getCustomActions(): PetAction[] {
   return []
 }
 
-// 保存自定义动作
-function saveCustomActions(actions: PetAction[]): void {
+// 读取自定义动作（完整版，包含图片数据）
+export function getCustomActionsWithData(): PetActionWithData[] {
+  const actions = getCustomActions()
+  return actions.map(action => ({
+    ...action,
+    frames: action.frames.map(frame => {
+      if (isFileReference(frame)) {
+        const fileName = frame.slice(6) // 去掉 '@file:' 前缀
+        const data = loadActionImage(fileName)
+        return data || frame
+      }
+      return frame
+    })
+  }))
+}
+
+// 保存自定义动作（将 base64 转为文件）
+function saveCustomActions(actions: PetActionWithData[]): PetAction[] {
+  const imagesDir = getActionImagesDir()
+  const lightActions: PetAction[] = []
+
   try {
-    const actionsPath = getCustomActionsPath()
-    const dir = path.dirname(actionsPath)
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true })
+    for (const action of actions) {
+      const lightFrames: string[] = []
+
+      for (let i = 0; i < action.frames.length; i++) {
+        const frame = action.frames[i]
+
+        if (frame.startsWith('data:image')) {
+          // base64 数据，保存为文件
+          const fileRef = saveActionImage(frame, action.name, i)
+          lightFrames.push(fileRef || frame)
+        } else if (isFileReference(frame)) {
+          // 已经是文件引用，直接保留
+          lightFrames.push(frame)
+        } else {
+          // emoji 或其他，直接保留
+          lightFrames.push(frame)
+        }
+      }
+
+      lightActions.push({
+        name: action.name,
+        frames: lightFrames,
+        duration: action.duration,
+        repeat: action.repeat,
+        hidden: action.hidden,
+        tags: action.tags,
+      })
     }
-    fs.writeFileSync(actionsPath, JSON.stringify(actions, null, 2), 'utf-8')
+
+    const actionsPath = getCustomActionsPath()
+    fs.writeFileSync(actionsPath, JSON.stringify(lightActions, null, 2), 'utf-8')
+
+    // 清理未使用的图片文件
+    cleanupUnusedImages(lightActions)
+
+    return lightActions
   } catch (err) {
     console.error('[DesktopPet] 保存自定义动作失败:', err)
+    return actions
+  }
+}
+
+// 清理未使用的图片文件
+function cleanupUnusedImages(actions: PetAction[]): void {
+  try {
+    const imagesDir = getActionImagesDir()
+    const usedFiles = new Set<string>()
+
+    for (const action of actions) {
+      for (const frame of action.frames) {
+        if (isFileReference(frame)) {
+          usedFiles.add(frame.slice(6))
+        }
+      }
+    }
+
+    const files = fs.readdirSync(imagesDir)
+    for (const file of files) {
+      if (!usedFiles.has(file)) {
+        const filePath = path.join(imagesDir, file)
+        fs.unlinkSync(filePath)
+        console.log('[DesktopPet] 清理未使用图片:', file)
+      }
+    }
+  } catch (err) {
+    console.error('[DesktopPet] 清理图片失败:', err)
   }
 }
 
@@ -547,25 +713,40 @@ export function registerDesktopPetIpc(): void {
     }
   })
 
-  // 获取自定义动作
+  // 获取自定义动作（轻量版，不含图片数据）
   ipcMain.handle('desktopPet:getCustomActions', () => {
     return { success: true, actions: getCustomActions() }
   })
 
+  // 获取自定义动作（完整版，含图片数据）
+  ipcMain.handle('desktopPet:getCustomActionsWithData', () => {
+    return { success: true, actions: getCustomActionsWithData() }
+  })
+
+  // 获取单个动作图片
+  ipcMain.handle('desktopPet:getActionImage', (_event, fileName: string) => {
+    const data = loadActionImage(fileName)
+    if (data) {
+      return { success: true, dataUrl: data }
+    }
+    return { success: false, error: '图片不存在' }
+  })
+
   // 保存自定义动作
-  ipcMain.handle('desktopPet:saveCustomActions', (_event, actions: PetAction[]) => {
+  ipcMain.handle('desktopPet:saveCustomActions', (_event, actions: PetActionWithData[]) => {
     console.log('[DesktopPet] 保存自定义动作:', actions.length, '个')
-    saveCustomActions(actions)
+    const lightActions = saveCustomActions(actions)
     // 更新配置使用自定义动作
     savePetConfig({ useCustomActions: actions.length > 0 })
-    // 通知化身窗口刷新配置
+    // 通知化身窗口刷新配置（发送完整数据）
     if (petWindow && !petWindow.isDestroyed()) {
       console.log('[DesktopPet] 发送动作更新事件到化身窗口')
-      petWindow.webContents.send('desktopPet:actionsUpdated', { actions, useCustomActions: actions.length > 0 })
+      const fullActions = getCustomActionsWithData()
+      petWindow.webContents.send('desktopPet:actionsUpdated', { actions: fullActions, useCustomActions: actions.length > 0 })
     } else {
       console.log('[DesktopPet] 化身窗口不存在，跳过通知')
     }
-    return { success: true }
+    return { success: true, actions: lightActions }
   })
 
   // 上传图片

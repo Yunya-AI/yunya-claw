@@ -173,6 +173,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     drag: () => ipcRenderer.invoke('desktopPet:drag'),
     endDrag: () => ipcRenderer.invoke('desktopPet:endDrag'),
     getCustomActions: () => ipcRenderer.invoke('desktopPet:getCustomActions'),
+    getCustomActionsWithData: () => ipcRenderer.invoke('desktopPet:getCustomActionsWithData'),
+    getActionImage: (fileName: string) => ipcRenderer.invoke('desktopPet:getActionImage', fileName),
     saveCustomActions: (actions: unknown[]) => ipcRenderer.invoke('desktopPet:saveCustomActions', actions),
     uploadImage: () => ipcRenderer.invoke('desktopPet:uploadImage'),
     saveImage: (base64Data: string) => ipcRenderer.invoke('desktopPet:saveImage', base64Data),

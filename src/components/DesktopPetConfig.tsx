@@ -33,9 +33,44 @@ const isImageUrl = (frame: string): boolean => {
   return frame.startsWith('data:image') || frame.startsWith('http') || frame.startsWith('file:')
 }
 
+// 判断是否是文件引用
+const isFileReference = (frame: string): boolean => {
+  return frame.startsWith('@file:')
+}
+
+// 判断是否是需要加载的图片帧
+const isLoadableImage = (frame: string): boolean => {
+  return isImageUrl(frame) || isFileReference(frame)
+}
+
 // 判断是否是 GIF 图片
 const isGifUrl = (frame: string): boolean => {
   return frame.startsWith('data:image/gif') || frame.toLowerCase().endsWith('.gif')
+}
+
+// 图片缓存
+const imageCache = new Map<string, string>()
+
+// 加载文件引用的图片
+async function loadImageByRef(fileRef: string): Promise<string | null> {
+  if (!isFileReference(fileRef)) return null
+
+  // 检查缓存
+  if (imageCache.has(fileRef)) {
+    return imageCache.get(fileRef)!
+  }
+
+  const fileName = fileRef.slice(6) // 去掉 '@file:' 前缀
+  try {
+    const res = await window.electronAPI?.desktopPet?.getActionImage(fileName)
+    if (res?.success && res.dataUrl) {
+      imageCache.set(fileRef, res.dataUrl)
+      return res.dataUrl
+    }
+  } catch (err) {
+    console.error('加载图片失败:', err)
+  }
+  return null
 }
 
 // 比例选项
@@ -114,7 +149,7 @@ function CustomSelect({
   )
 }
 
-// Memo 化的帧组件
+// Memo 化的帧组件（支持异步加载图片）
 const FrameItem = memo(function FrameItem({
   frame,
   frameIndex,
@@ -132,23 +167,54 @@ const FrameItem = memo(function FrameItem({
   onUpdateFrame: (value: string) => void
   onDownloadFrame: () => void
 }) {
+  const [loadedImage, setLoadedImage] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  // 异步加载文件引用的图片
+  useEffect(() => {
+    if (isFileReference(frame)) {
+      // 先检查缓存
+      const cached = imageCache.get(frame)
+      if (cached) {
+        setLoadedImage(cached)
+        return
+      }
+
+      setLoading(true)
+      loadImageByRef(frame).then(img => {
+        if (img) {
+          setLoadedImage(img)
+        }
+        setLoading(false)
+      })
+    } else {
+      setLoadedImage(null)
+    }
+  }, [frame])
+
   const handleDownloadClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     e.preventDefault()
     onDownloadFrame()
   }
 
-  const isImage = isImageUrl(frame)
-  const showDownload = frame.startsWith('data:image')
+  // 判断当前帧是否可显示为图片
+  const isImage = isImageUrl(frame) || loadedImage
+  const showDownload = frame.startsWith('data:image') || (loadedImage && loadedImage.startsWith('data:image'))
+
+  // 实际显示的图片源
+  const displaySrc = loadedImage || frame
 
   return (
     <div className="relative group">
       <div
         className="w-12 h-12 rounded border border-border bg-input flex items-center justify-center overflow-hidden"
-        style={{ background: isImage ? 'transparent' : 'repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 8px 8px' }}
+        style={{ background: isImage || loading ? 'transparent' : 'repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 8px 8px' }}
       >
-        {isImage ? (
-          <img src={frame} alt={`frame-${frameIndex}`} className="w-full h-full object-contain" />
+        {loading ? (
+          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+        ) : isImage ? (
+          <img src={displaySrc} alt={`frame-${frameIndex}`} className="w-full h-full object-contain" />
         ) : (
           <span className="text-xl">{frame}</span>
         )}
@@ -191,6 +257,66 @@ const FrameItem = memo(function FrameItem({
     </div>
   )
 })
+
+// 预览帧组件（支持异步加载）
+function PreviewFrame({ frame }: { frame: string | undefined }) {
+  const [loadedImage, setLoadedImage] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!frame) {
+      setLoadedImage(null)
+      return
+    }
+
+    if (isFileReference(frame)) {
+      const cached = imageCache.get(frame)
+      if (cached) {
+        setLoadedImage(cached)
+        return
+      }
+
+      setLoading(true)
+      loadImageByRef(frame).then(img => {
+        if (img) {
+          setLoadedImage(img)
+        }
+        setLoading(false)
+      })
+    } else {
+      setLoadedImage(null)
+    }
+  }, [frame])
+
+  if (!frame) {
+    return (
+      <div
+        className="w-24 h-24 bg-black/20 rounded-lg flex items-center justify-center"
+        style={{ background: 'repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 16px 16px' }}
+      >
+        <span className="text-muted-foreground text-xs">选择动作预览</span>
+      </div>
+    )
+  }
+
+  const displaySrc = loadedImage || frame
+  const isImage = isImageUrl(frame) || loadedImage
+
+  return (
+    <div
+      className="w-24 h-24 bg-black/20 rounded-lg flex items-center justify-center"
+      style={{ background: isImage || loading ? 'transparent' : 'repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 16px 16px' }}
+    >
+      {loading ? (
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      ) : isImage ? (
+        <img src={displaySrc} alt="preview" className="w-16 h-16 object-contain" />
+      ) : (
+        <span className="text-4xl">{frame}</span>
+      )}
+    </div>
+  )
+}
 
 // Memo 化的动作卡片组件
 const ActionCard = memo(function ActionCard({
@@ -526,11 +652,22 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
     if (!action) return
 
     const frame = action.frames[frameIndex]
-    if (!frame || !isGifUrl(frame)) return
+    if (!frame) return
+
+    // 获取实际图片数据
+    let imageData = frame
+    if (isFileReference(frame)) {
+      const loaded = await loadImageByRef(frame)
+      if (!loaded) return
+      imageData = loaded
+    }
+
+    // 只下载 GIF
+    if (!isGifUrl(imageData)) return
 
     const suggestedName = `${action.name}_frame_${frameIndex + 1}.gif`
     try {
-      await window.electronAPI?.util?.saveImage(frame, suggestedName)
+      await window.electronAPI?.util?.saveImage(imageData, suggestedName)
     } catch (err) {
       console.error('下载帧失败:', err)
     }
@@ -541,18 +678,29 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
     const action = actions[actionIndex]
     if (!action) return
 
-    // 过滤出 GIF 图片帧
+    // 过滤出图片帧（包括文件引用）
     const imageFrames = action.frames
       .map((frame, idx) => ({ frame, idx }))
-      .filter(({ frame }) => isGifUrl(frame))
+      .filter(({ frame }) => isFileReference(frame) || isGifUrl(frame))
 
     if (imageFrames.length === 0) return
 
     // 逐个下载帧
     for (const { frame, idx } of imageFrames) {
+      // 获取实际图片数据
+      let imageData = frame
+      if (isFileReference(frame)) {
+        const loaded = await loadImageByRef(frame)
+        if (!loaded) continue
+        imageData = loaded
+      }
+
+      // 只下载 GIF
+      if (!isGifUrl(imageData)) continue
+
       const suggestedName = `${action.name}_frame_${idx + 1}.gif`
       try {
-        await window.electronAPI?.util?.saveImage(frame, suggestedName)
+        await window.electronAPI?.util?.saveImage(imageData, suggestedName)
       } catch (err) {
         console.error(`下载帧 ${idx} 失败:`, err)
       }
@@ -971,20 +1119,7 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
       <div className="bg-card rounded-lg border border-border p-4">
         <h3 className="text-sm font-medium mb-3">预览</h3>
         <div className="flex items-center gap-4">
-          <div
-            className="w-24 h-24 bg-black/20 rounded-lg flex items-center justify-center"
-            style={{ background: 'repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 16px 16px' }}
-          >
-            {previewAction && currentPreviewFrame ? (
-              isImageUrl(currentPreviewFrame) ? (
-                <img src={currentPreviewFrame} alt="preview" className="w-16 h-16 object-contain" />
-              ) : (
-                <span className="text-4xl">{currentPreviewFrame}</span>
-              )
-            ) : (
-              <span className="text-muted-foreground text-xs">选择动作预览</span>
-            )}
-          </div>
+          <PreviewFrame frame={previewAction ? currentPreviewFrame : null} />
           <div className="flex-1 space-y-2">
             <select
               value={previewAction || ''}
