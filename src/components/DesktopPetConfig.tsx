@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { Plus, Minus, Trash2, Image, Play, RefreshCw, Info, ChevronDown, ChevronUp, Wand2, Loader2, MonitorPlay, Eye, EyeOff, Settings2, Download, Package } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import CharacterLibrary from './CharacterLibrary'
 
 interface PetAction {
-  name: string
+  name: string          // 内部标识
+  displayName?: string   // 显示名称（用于系统动作配置选择）
   frames: string[]
   duration: number
   repeat?: number
@@ -326,6 +328,7 @@ const ActionCard = memo(function ActionCard({
   onRemove,
   onToggleHidden,
   onUpdateName,
+  onUpdateDisplayName,
   onUpdateDuration,
   onAddFrame,
   onRemoveFrame,
@@ -340,6 +343,7 @@ const ActionCard = memo(function ActionCard({
   onRemove: () => void
   onToggleHidden: () => void
   onUpdateName: (name: string) => void
+  onUpdateDisplayName: (displayName: string) => void
   onUpdateDuration: (duration: number) => void
   onAddFrame: () => void
   onRemoveFrame: (frameIndex: number) => void
@@ -360,6 +364,13 @@ const ActionCard = memo(function ActionCard({
           onChange={(e) => onUpdateName(e.target.value)}
           placeholder="动作名称（如 idle、happy）"
           className="flex-1 bg-input border border-border rounded px-3 py-2 text-sm"
+        />
+        <input
+          type="text"
+          value={action.displayName || ''}
+          onChange={(e) => onUpdateDisplayName(e.target.value)}
+          placeholder="显示名称"
+          className="w-32 bg-input border border-border rounded px-2 py-2 text-sm"
         />
         <div className="flex items-center gap-2">
           <label className="text-xs text-muted-foreground">持续时间</label>
@@ -467,10 +478,11 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState<string | null>(null)
   const [sourceImage, setSourceImage] = useState<string | null>(null)
-  const [actionPrompts, setActionPrompts] = useState<Array<{ prompt: string; duration: number }>>([{ prompt: '呼吸', duration: 2 }])
+  const [actionPrompts, setActionPrompts] = useState<Array<{ prompt: string; duration: number; displayName: string }>>([{ prompt: '呼吸', duration: 2, displayName: '' }])
   const [generateProgress, setGenerateProgress] = useState<{ current: number; total: number; currentPrompt: string } | null>(null)
   const [aspectRatio, setAspectRatio] = useState<string>('1:1')
   const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null)
+  const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null)
 
   // 支持的比例
   const SUPPORTED_ASPECT_RATIOS = ['16:9', '9:16', '4:3', '3:4', '1:1']
@@ -512,7 +524,7 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
 
   // 添加动作描述
   const handleAddPrompt = () => {
-    setActionPrompts(prev => [...prev, { prompt: '挥手', duration: 2 }])
+    setActionPrompts(prev => [...prev, { prompt: '挥手', duration: 2, displayName: '' }])
   }
 
   // 删除动作描述
@@ -829,7 +841,7 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
                         key={action.name}
                         className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-primary/20 text-primary rounded-full"
                       >
-                        {action.name}
+                        {action.displayName || action.name}
                         <button
                           onClick={() => {
                             setSystemActions(prev => prev.map((sa, i) => {
@@ -876,7 +888,7 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
                     {availableActions
                       .filter(a => !sysAction.actionNames.includes(a.name))
                       .map(action => (
-                        <option key={action.name} value={action.name}>{action.name}</option>
+                        <option key={action.name} value={action.name}>{action.displayName || action.name}</option>
                       ))
                     }
                   </select>
@@ -889,6 +901,28 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
         <p className="text-xs text-muted-foreground mt-3">
           提示：如果某个状态未配置动作，系统会尝试根据动作名称或标签自动匹配。
         </p>
+      </div>
+
+      {/* 形象库 */}
+      <div className="bg-card rounded-lg border border-border p-4">
+        <CharacterLibrary
+          selectedId={selectedCharacterId}
+          onSelect={(character) => {
+            setSelectedCharacterId(character.id)
+            setSourceImage(character.imageDataUrl)
+            setGenerateError(null)
+            // 获取图片尺寸
+            const img = new window.Image()
+            img.onload = () => {
+              if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                const dimensions = { width: img.naturalWidth, height: img.naturalHeight }
+                setImageDimensions(dimensions)
+                setAspectRatio(getClosestAspectRatio(dimensions.width, dimensions.height))
+              }
+            }
+            img.src = character.imageDataUrl
+          }}
+        />
       </div>
 
       {/* AI 自动生成动画 */}
@@ -989,6 +1023,14 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
                         className="flex-1 bg-input border border-border rounded px-3 py-2 text-sm"
                         disabled={generating}
                       />
+                      <input
+                        type="text"
+                        value={item.displayName}
+                        onChange={(e) => handleUpdatePrompt(index, 'displayName', e.target.value)}
+                        placeholder="显示名"
+                        className="w-28 bg-input border border-border rounded px-2 py-2 text-sm"
+                        disabled={generating}
+                      />
                       <CustomSelect
                         value={String(item.duration)}
                         options={DURATION_OPTIONS}
@@ -1049,6 +1091,7 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
                         const actionName = prompt.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')
                         const newAction: PetAction = {
                           name: `${actionName}_${Date.now()}_${i}`,
+                          displayName: item.displayName.trim() || prompt, // 使用填写的显示名，否则使用描述
                           frames: [res.gifDataUrl],
                           duration: item.duration * 1000, // 记录视频播放时长（毫秒）
                         }
@@ -1068,7 +1111,7 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
 
                     // 清空输入
                     setSourceImage(null)
-                    setActionPrompts([{ prompt: '呼吸', duration: 2 }])
+                    setActionPrompts([{ prompt: '呼吸', duration: 2, displayName: '' }])
                     onImageCleared?.()
 
                   } catch (err) {
@@ -1131,7 +1174,7 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
             >
               <option value="">选择动作...</option>
               {actions.filter(a => !a.hidden).map((action, i) => (
-                <option key={i} value={action.name}>{action.name}</option>
+                <option key={i} value={action.name}>{action.displayName || action.name}</option>
               ))}
             </select>
             <p className="text-xs text-muted-foreground">
@@ -1188,6 +1231,7 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
                 onRemove={() => handleRemoveAction(actionIndex)}
                 onToggleHidden={() => handleUpdateAction(actionIndex, 'hidden', !action.hidden)}
                 onUpdateName={(name) => handleUpdateAction(actionIndex, 'name', name)}
+                onUpdateDisplayName={(displayName) => handleUpdateAction(actionIndex, 'displayName', displayName)}
                 onUpdateDuration={(duration) => handleUpdateAction(actionIndex, 'duration', duration)}
                 onAddFrame={() => handleAddFrame(actionIndex)}
                 onRemoveFrame={(frameIndex) => handleRemoveFrame(actionIndex, frameIndex)}

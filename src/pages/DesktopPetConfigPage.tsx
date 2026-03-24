@@ -1,7 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react'
-import { PersonStanding, Power, Settings2, ChevronDown, User } from 'lucide-react'
+import { PersonStanding, Power, Settings2, ChevronDown } from 'lucide-react'
 import DesktopPetConfig from '@/components/DesktopPetConfig'
-import CharacterLibrary from '@/components/CharacterLibrary'
 
 interface ChromakeyConfig {
   color: string
@@ -333,26 +332,9 @@ export default function DesktopPetConfigPage() {
           )}
         </div>
 
-        {/* 形象库 */}
-        <div className="bg-card rounded-lg border border-border p-4 space-y-4">
-          <CharacterLibrary
-            selectedId={selectedCharacterId}
-            onSelect={(character) => {
-              // 选中形象后，设置到动画生成区域
-              setSelectedCharacterId(character.id)
-              setSelectedCharacterImage(character.imageDataUrl)
-            }}
-          />
-        </div>
-
         {/* 动作配置 */}
         <DesktopPetConfig
           onSaved={loadPetState}
-          selectedCharacterImage={selectedCharacterImage}
-          onImageCleared={() => {
-            setSelectedCharacterId(null)
-            setSelectedCharacterImage(null)
-          }}
         />
       </div>
     </div>
