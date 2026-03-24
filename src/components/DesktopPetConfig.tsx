@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, memo } from 'react'
-import { Plus, Minus, Trash2, Image, Play, RefreshCw, Info, ChevronDown, ChevronUp, Wand2, Loader2, MonitorPlay, Eye, EyeOff, Settings2 } from 'lucide-react'
+import { Plus, Minus, Trash2, Image, Play, RefreshCw, Info, ChevronDown, ChevronUp, Wand2, Loader2, MonitorPlay, Eye, EyeOff, Settings2, Download, Package } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface PetAction {
@@ -31,6 +31,11 @@ interface DesktopPetConfigProps {
 // 判断是否是图片 URL
 const isImageUrl = (frame: string): boolean => {
   return frame.startsWith('data:image') || frame.startsWith('http') || frame.startsWith('file:')
+}
+
+// 判断是否是 GIF 图片
+const isGifUrl = (frame: string): boolean => {
+  return frame.startsWith('data:image/gif') || frame.toLowerCase().endsWith('.gif')
 }
 
 // 比例选项
@@ -113,39 +118,64 @@ function CustomSelect({
 const FrameItem = memo(function FrameItem({
   frame,
   frameIndex,
+  actionName,
   onUploadImage,
   onRemoveFrame,
   onUpdateFrame,
+  onDownloadFrame,
 }: {
   frame: string
   frameIndex: number
+  actionName: string
   onUploadImage: () => void
   onRemoveFrame: () => void
   onUpdateFrame: (value: string) => void
+  onDownloadFrame: () => void
 }) {
+  const handleDownloadClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+    onDownloadFrame()
+  }
+
+  const isImage = isImageUrl(frame)
+  const showDownload = frame.startsWith('data:image')
+
   return (
     <div className="relative group">
       <div
         className="w-12 h-12 rounded border border-border bg-input flex items-center justify-center overflow-hidden"
-        style={{ background: isImageUrl(frame) ? 'transparent' : 'repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 8px 8px' }}
+        style={{ background: isImage ? 'transparent' : 'repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 8px 8px' }}
       >
-        {isImageUrl(frame) ? (
+        {isImage ? (
           <img src={frame} alt={`frame-${frameIndex}`} className="w-full h-full object-contain" />
         ) : (
           <span className="text-xl">{frame}</span>
         )}
       </div>
-      <div className="absolute -top-1 -right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="absolute -top-1 -right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+        {showDownload && (
+          <button
+            onClick={handleDownloadClick}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="p-1 rounded bg-green-600 text-white cursor-pointer"
+            title="下载图片"
+          >
+            <Download className="w-3 h-3" />
+          </button>
+        )}
         <button
-          onClick={onUploadImage}
-          className="p-1 rounded bg-primary text-primary-foreground"
+          onClick={(e) => { e.stopPropagation(); onUploadImage() }}
+          onMouseDown={(e) => e.stopPropagation()}
+          className="p-1 rounded bg-primary text-primary-foreground cursor-pointer"
           title="上传图片"
         >
           <Image className="w-3 h-3" />
         </button>
         <button
-          onClick={onRemoveFrame}
-          className="p-1 rounded bg-destructive text-destructive-foreground"
+          onClick={(e) => { e.stopPropagation(); onRemoveFrame() }}
+          onMouseDown={(e) => e.stopPropagation()}
+          className="p-1 rounded bg-destructive text-destructive-foreground cursor-pointer"
           title="删除帧"
         >
           <Trash2 className="w-3 h-3" />
@@ -155,7 +185,7 @@ const FrameItem = memo(function FrameItem({
         type="text"
         value={frame}
         onChange={(e) => onUpdateFrame(e.target.value)}
-        className="absolute inset-0 w-full h-full opacity-0 cursor-text"
+        className="absolute inset-0 w-full h-full opacity-0 cursor-text pointer-events-none"
         title="点击输入 emoji 或图片 URL"
       />
     </div>
@@ -175,6 +205,8 @@ const ActionCard = memo(function ActionCard({
   onRemoveFrame,
   onUpdateFrame,
   onUploadImage,
+  onDownloadFrame,
+  onDownloadAction,
 }: {
   action: PetAction
   onPreview: () => void
@@ -187,7 +219,11 @@ const ActionCard = memo(function ActionCard({
   onRemoveFrame: (frameIndex: number) => void
   onUpdateFrame: (frameIndex: number, value: string) => void
   onUploadImage: (frameIndex: number) => void
+  onDownloadFrame: (frameIndex: number) => void
+  onDownloadAction: () => void
 }) {
+  const hasImageFrames = action.frames.some(f => isImageUrl(f))
+
   return (
     <div className="bg-card rounded-lg border border-border p-4 space-y-3">
       {/* 动作头部 */}
@@ -226,6 +262,18 @@ const ActionCard = memo(function ActionCard({
         >
           <MonitorPlay className="w-4 h-4" />
         </button>
+        {hasImageFrames && (
+          <button
+            onClick={() => {
+              console.log('[ActionCard] 下载所有帧按钮点击', { actionName: action.name, frameCount: action.frames.length })
+              onDownloadAction()
+            }}
+            className="p-2 rounded hover:bg-green-600/20 text-green-600 transition-colors"
+            title="下载所有帧图片"
+          >
+            <Package className="w-4 h-4" />
+          </button>
+        )}
         <button
           onClick={onToggleHidden}
           className={cn(
@@ -263,9 +311,11 @@ const ActionCard = memo(function ActionCard({
               key={frameIndex}
               frame={frame}
               frameIndex={frameIndex}
+              actionName={action.name}
               onUploadImage={() => onUploadImage(frameIndex)}
               onRemoveFrame={() => onRemoveFrame(frameIndex)}
               onUpdateFrame={(value) => onUpdateFrame(frameIndex, value)}
+              onDownloadFrame={() => onDownloadFrame(frameIndex)}
             />
           ))}
         </div>
@@ -469,6 +519,47 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
       console.error('上传图片失败:', err)
     }
   }
+
+  // 下载单个帧图片（仅 GIF）
+  const handleDownloadFrame = useCallback(async (actionIndex: number, frameIndex: number) => {
+    const action = actions[actionIndex]
+    if (!action) return
+
+    const frame = action.frames[frameIndex]
+    if (!frame || !isGifUrl(frame)) return
+
+    const suggestedName = `${action.name}_frame_${frameIndex + 1}.gif`
+    try {
+      await window.electronAPI?.util?.saveImage(frame, suggestedName)
+    } catch (err) {
+      console.error('下载帧失败:', err)
+    }
+  }, [actions])
+
+  // 下载动作的所有帧图片（仅 GIF）
+  const handleDownloadAction = useCallback(async (actionIndex: number) => {
+    const action = actions[actionIndex]
+    if (!action) return
+
+    // 过滤出 GIF 图片帧
+    const imageFrames = action.frames
+      .map((frame, idx) => ({ frame, idx }))
+      .filter(({ frame }) => isGifUrl(frame))
+
+    if (imageFrames.length === 0) return
+
+    // 逐个下载帧
+    for (const { frame, idx } of imageFrames) {
+      const suggestedName = `${action.name}_frame_${idx + 1}.gif`
+      try {
+        await window.electronAPI?.util?.saveImage(frame, suggestedName)
+      } catch (err) {
+        console.error(`下载帧 ${idx} 失败:`, err)
+      }
+      // 添加小延迟避免对话框冲突
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+  }, [actions])
 
   const handleSave = async () => {
     setSaving(true)
@@ -967,6 +1058,8 @@ export default function DesktopPetConfig({ onSaved, selectedCharacterImage, onIm
                 onRemoveFrame={(frameIndex) => handleRemoveFrame(actionIndex, frameIndex)}
                 onUpdateFrame={(frameIndex, value) => handleUpdateFrame(actionIndex, frameIndex, value)}
                 onUploadImage={(frameIndex) => handleUploadImage(actionIndex, frameIndex)}
+                onDownloadFrame={(frameIndex) => handleDownloadFrame(actionIndex, frameIndex)}
+                onDownloadAction={() => handleDownloadAction(actionIndex)}
               />
             ))}
           </div>

@@ -956,11 +956,17 @@ ipcMain.handle('util:openExternal', async (_event, url: string) => {
 
 ipcMain.handle('util:saveImage', async (_event, imageUrl: string, suggestedName?: string) => {
   try {
-    const configDir = getOpenclawConfigDir()
     let buffer: Buffer
     let ext = '.png'
 
-    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+    // 支持 base64 Data URL 格式 (data:image/png;base64,...)
+    if (imageUrl.startsWith('data:image')) {
+      const match = imageUrl.match(/^data:image\/(\w+);base64,(.+)$/)
+      if (!match) return { success: false, error: '无效的 Data URL 格式' }
+      const format = match[1].toLowerCase().replace('jpeg', 'jpg')
+      ext = `.${format}`
+      buffer = Buffer.from(match[2], 'base64')
+    } else if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
       const res = await new Promise<Buffer>((resolve, reject) => {
         const url = new URL(imageUrl)
         const mod = url.protocol === 'https:' ? https : http
@@ -975,6 +981,7 @@ ipcMain.handle('util:saveImage', async (_event, imageUrl: string, suggestedName?
       const m = imageUrl.match(/\.(png|jpe?g|gif|webp|bmp)(\?|$)/i)
       if (m) ext = m[1].toLowerCase().replace('jpeg', 'jpg')
     } else {
+      const configDir = getOpenclawConfigDir()
       let filePath: string
       if (imageUrl.startsWith('screenshot://')) {
         filePath = path.join(configDir, 'media', imageUrl.slice('screenshot://'.length))
