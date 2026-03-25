@@ -215,6 +215,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSystemActions: () => ipcRenderer.invoke('desktopPet:getSystemActions'),
     saveSystemActions: (systemActions: unknown[]) => ipcRenderer.invoke('desktopPet:saveSystemActions', systemActions),
   },
+  /** 智能感知系统 */
+  petIntelligence: {
+    getConfig: () => ipcRenderer.invoke('petIntelligence:getConfig'),
+    saveConfig: (config: unknown) => ipcRenderer.invoke('petIntelligence:saveConfig', config),
+    toggle: (enabled: boolean) => ipcRenderer.invoke('petIntelligence:toggle', enabled),
+    getDefaultRules: () => ipcRenderer.invoke('petIntelligence:getDefaultRules'),
+    updateWindow: () => ipcRenderer.invoke('petIntelligence:updateWindow'),
+    testAction: (actionName: string) => ipcRenderer.invoke('petIntelligence:testAction', actionName),
+  },
   lifecycle: {
     onStep: (callback: (data: { phase: 'starting' | 'stopping'; step: string }) => void) => {
       const wrapped = (_event: Electron.IpcRendererEvent, data: { phase: 'starting' | 'stopping'; step: string }) => callback(data)

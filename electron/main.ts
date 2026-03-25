@@ -10,8 +10,17 @@ import { ensurePlugin } from './bundled-plugins'
 import { ensureBundledSkills } from './bundled-skills'
 import { runAllMigrations } from './config-migration'
 import { ClipboardMonitor, registerClipboardIpc, registerQuickPasteShortcut, unregisterQuickPasteShortcut, setClipboardMonitorInstance } from './clipboard-monitor'
-import { restorePetState, registerDesktopPetIpc, sendAgentStateToPet } from './desktop-pet'
+import { restorePetState, registerDesktopPetIpc, sendAgentStateToPet, getPetWindow, playPetAction } from './desktop-pet'
 import { stripUserMessageForDisplay } from '../src/lib/chat-utils'
+import {
+  PetSensor,
+  PetBrain,
+  PetExecutor,
+  DEFAULT_INTELLIGENCE_CONFIG,
+  type PetIntelligenceConfig,
+  type SensorEvent,
+  type ActionDecision,
+} from './pet-intelligence'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const archiver = require('archiver') as (format: string, options?: { zlib?: { level?: number } }) => {
   file: (path: string, data?: { name?: string }) => unknown
@@ -66,6 +75,12 @@ let gatewayPort = 18789
 type AgentState = 'idle' | 'thinking' | 'responding' | 'error'
 let currentAgentState: AgentState = 'idle'
 let gatewayEventWs: import('ws').WebSocket | null = null
+
+/** 智能感知系统 */
+let petSensor: PetSensor | null = null
+let petBrain: PetBrain | null = null
+let petExecutor: PetExecutor | null = null
+let petIntelligenceConfig: PetIntelligenceConfig = { ...DEFAULT_INTELLIGENCE_CONFIG }
 
 /** 接入相关子进程（ensurePlugin、runChannelsAdd），退出时统一清理避免残留 */
 const integrationChildren = new Set<ChildProcess>()
@@ -2047,6 +2062,10 @@ function handleGatewayEvent(event: string, payload: Record<string, unknown>) {
 
       if (phase === 'start') {
         updateAgentState('thinking', sessionKey)
+        // 清空感知器缓冲区
+        if (petSensor) {
+          petSensor.clearBuffer()
+        }
       } else if (phase === 'end') {
         updateAgentState('idle', sessionKey)
       } else if (phase === 'error') {
@@ -2060,6 +2079,14 @@ function handleGatewayEvent(event: string, payload: Record<string, unknown>) {
     if (stream === 'assistant') {
       if (currentAgentState === 'thinking') {
         updateAgentState('responding', sessionKey)
+      }
+
+      // 将流式内容发送到感知器
+      if (petSensor && data) {
+        const content = data.text as string || data.content as string
+        if (content) {
+          petSensor.onStreamContent(content)
+        }
       }
     }
   }
@@ -2087,12 +2114,170 @@ function updateAgentState(newState: AgentState, sessionKey?: string) {
   // 也通知主窗口（可选）
   mainWindow?.webContents.send('desktopPet:agentState', { state: newState })
 
+  // 更新智能感知系统的 Agent 状态
+  if (petBrain) {
+    petBrain.updateAgentState(newState)
+  }
+
   // 当从 idle 变为 thinking/responding 或从 responding 变为 idle 时，
   // 通知主窗口刷新对话（可能是外部消息）
   if ((previousState === 'idle' && (newState === 'thinking' || newState === 'responding')) ||
       (previousState === 'responding' && newState === 'idle')) {
     mainWindow?.webContents.send('gateway:chatRefresh', { sessionKey })
   }
+}
+
+// ---- 智能感知系统 ----
+
+/** 获取智能感知配置文件路径 */
+function getPetIntelligenceConfigPath(): string {
+  const configDir = path.join(os.homedir(), '.openclaw', 'yunya')
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true })
+  }
+  return path.join(configDir, 'pet-intelligence.json')
+}
+
+/** 加载智能感知配置 */
+function loadPetIntelligenceConfig(): PetIntelligenceConfig {
+  try {
+    const configPath = getPetIntelligenceConfigPath()
+    if (fs.existsSync(configPath)) {
+      const content = fs.readFileSync(configPath, 'utf-8')
+      const config = JSON.parse(content)
+      return { ...DEFAULT_INTELLIGENCE_CONFIG, ...config }
+    }
+  } catch (error) {
+    console.error('[PetIntelligence] 加载配置失败:', error)
+  }
+  return { ...DEFAULT_INTELLIGENCE_CONFIG }
+}
+
+/** 保存智能感知配置 */
+function savePetIntelligenceConfig(config: PetIntelligenceConfig): void {
+  try {
+    const configPath = getPetIntelligenceConfigPath()
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8')
+    petIntelligenceConfig = config
+  } catch (error) {
+    console.error('[PetIntelligence] 保存配置失败:', error)
+  }
+}
+
+/** 初始化智能感知系统 */
+function initPetIntelligence(): void {
+  // 加载配置
+  petIntelligenceConfig = loadPetIntelligenceConfig()
+
+  if (!petIntelligenceConfig.enabled) {
+    console.log('[PetIntelligence] 智能感知未启用')
+    return
+  }
+
+  // 创建感知器
+  petSensor = new PetSensor(petIntelligenceConfig.sensor)
+  petSensor.updateRules(petIntelligenceConfig.brain.rules)
+
+  // 创建决策中心
+  petBrain = new PetBrain(petIntelligenceConfig.brain)
+
+  // 创建执行器
+  petExecutor = new PetExecutor(petIntelligenceConfig.executor)
+
+  // 连接感知器 -> 决策中心
+  petSensor.on('event', (event: SensorEvent) => {
+    if (!petBrain || !petExecutor) return
+
+    const decision = petBrain.process(event)
+    if (decision) {
+      petExecutor.enqueue(decision)
+    }
+  })
+
+  // 连接执行器 -> 桌宠窗口
+  if (petExecutor) {
+    petExecutor.setPetWindow(getPetWindow())
+  }
+
+  console.log('[PetIntelligence] 智能感知系统已初始化')
+}
+
+/** 更新智能感知系统的桌宠窗口引用 */
+function updatePetIntelligenceWindow(): void {
+  if (petExecutor) {
+    petExecutor.setPetWindow(getPetWindow())
+  }
+}
+
+/** 销毁智能感知系统 */
+function destroyPetIntelligence(): void {
+  if (petSensor) {
+    petSensor.destroy()
+    petSensor = null
+  }
+  if (petBrain) {
+    petBrain.destroy()
+    petBrain = null
+  }
+  if (petExecutor) {
+    petExecutor.destroy()
+    petExecutor = null
+  }
+  console.log('[PetIntelligence] 智能感知系统已销毁')
+}
+
+/** 注册智能感知系统 IPC */
+function registerPetIntelligenceIpc(): void {
+  // 获取配置
+  ipcMain.handle('petIntelligence:getConfig', () => {
+    return { success: true, config: petIntelligenceConfig }
+  })
+
+  // 保存配置
+  ipcMain.handle('petIntelligence:saveConfig', (_event, config: PetIntelligenceConfig) => {
+    savePetIntelligenceConfig(config)
+
+    // 重新初始化
+    destroyPetIntelligence()
+    initPetIntelligence()
+
+    return { success: true }
+  })
+
+  // 启用/禁用
+  ipcMain.handle('petIntelligence:toggle', (_event, enabled: boolean) => {
+    petIntelligenceConfig.enabled = enabled
+    savePetIntelligenceConfig(petIntelligenceConfig)
+
+    if (enabled) {
+      initPetIntelligence()
+    } else {
+      destroyPetIntelligence()
+    }
+
+    return { success: true, enabled }
+  })
+
+  // 获取默认规则
+  ipcMain.handle('petIntelligence:getDefaultRules', () => {
+    return { success: true, rules: DEFAULT_INTELLIGENCE_CONFIG.brain.rules }
+  })
+
+  // 更新窗口引用（当桌宠窗口创建/销毁时调用）
+  ipcMain.handle('petIntelligence:updateWindow', () => {
+    updatePetIntelligenceWindow()
+    return { success: true }
+  })
+
+  // 手动触发动作（用于测试）
+  ipcMain.handle('petIntelligence:testAction', (_event, actionName: string) => {
+    return playPetAction(actionName)
+  })
+
+  // 监听桌宠窗口变化事件
+  ipcMain.on('pet:windowChanged', () => {
+    updatePetIntelligenceWindow()
+  })
 }
 
 // ---- IPC Handlers ----
@@ -3157,12 +3342,18 @@ app.whenReady().then(async () => {
   // 注册桌面宠物 IPC
   registerDesktopPetIpc()
 
+  // 注册智能感知系统 IPC
+  registerPetIntelligenceIpc()
+
   createWindow()
 
   registerQuickPasteShortcut(mainWindow)
 
   // 恢复桌面宠物状态
   restorePetState(mainWindow)
+
+  // 初始化智能感知系统
+  initPetIntelligence()
 
   sendLifecycle('starting', '正在启动 Gateway...')
   await startGateway()

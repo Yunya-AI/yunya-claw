@@ -38,6 +38,47 @@ interface CharacterItem {
   createdAt: number
 }
 
+// 智能感知系统类型
+type SensorEventType = 'text' | 'intent' | 'emotion' | 'milestone'
+type IntentType = 'greeting' | 'question' | 'command' | 'explanation' | 'error' | 'success' | 'coding'
+type SentimentType = 'positive' | 'negative' | 'neutral'
+type Priority = 'low' | 'normal' | 'high' | 'urgent'
+
+interface DecisionRule {
+  id: string
+  name: string
+  description?: string
+  triggers: {
+    keywords?: string[]
+    intent?: IntentType[]
+    sentiment?: SentimentType[]
+    regex?: string[]
+    agentState?: ('idle' | 'thinking' | 'responding' | 'error')[]
+  }
+  action: string
+  priority: Priority
+  cooldown?: number
+  enabled?: boolean
+}
+
+interface PetIntelligenceConfig {
+  enabled: boolean
+  sensor: {
+    bufferSize: number
+    debounceMs: number
+  }
+  brain: {
+    useLLM: boolean
+    llmEndpoint?: string
+    llmModel?: string
+    rules: DecisionRule[]
+  }
+  executor: {
+    maxQueueSize: number
+    defaultDuration: number
+  }
+}
+
 interface SkillData {
   name: string
   description: string
@@ -275,6 +316,15 @@ interface ElectronAPI {
     // 系统动作
     getSystemActions: () => Promise<{ success: boolean; systemActions: SystemActionConfig[] }>
     saveSystemActions: (systemActions: SystemActionConfig[]) => Promise<{ success: boolean; error?: string }>
+  }
+  /** 智能感知系统 */
+  petIntelligence: {
+    getConfig: () => Promise<{ success: boolean; config: PetIntelligenceConfig }>
+    saveConfig: (config: PetIntelligenceConfig) => Promise<{ success: boolean }>
+    toggle: (enabled: boolean) => Promise<{ success: boolean; enabled: boolean }>
+    getDefaultRules: () => Promise<{ success: boolean; rules: DecisionRule[] }>
+    updateWindow: () => Promise<{ success: boolean }>
+    testAction: (actionName: string) => Promise<{ success: boolean; error?: string }>
   }
   lifecycle: {
     onStep: (callback: (data: { phase: 'starting' | 'stopping'; step: string }) => void) => () => void

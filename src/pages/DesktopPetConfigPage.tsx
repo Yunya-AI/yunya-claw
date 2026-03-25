@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { PersonStanding, Power, Settings2, ChevronDown } from 'lucide-react'
 import DesktopPetConfig from '@/components/DesktopPetConfig'
+import { PetIntelligenceConfig } from '@/components/PetIntelligenceConfig'
 
 interface ChromakeyConfig {
   color: string
@@ -336,6 +337,11 @@ export default function DesktopPetConfigPage() {
         <DesktopPetConfig
           onSaved={loadPetState}
         />
+
+        {/* 智能感知配置 */}
+        <div className="bg-card rounded-lg border border-border p-4">
+          <PetIntelligenceConfig />
+        </div>
       </div>
     </div>
   )

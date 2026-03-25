@@ -552,6 +552,30 @@ export function sendAgentStateToPet(state: 'idle' | 'thinking' | 'responding' | 
   }
 }
 
+// 获取宠物窗口实例
+export function getPetWindow(): BrowserWindow | null {
+  if (petWindow && !petWindow.isDestroyed()) {
+    return petWindow
+  }
+  return null
+}
+
+// 在化身窗口播放指定动作（供其他模块调用）
+export function playPetAction(actionName: string): { success: boolean; error?: string } {
+  if (!petWindow || petWindow.isDestroyed()) {
+    return { success: false, error: '化身窗口未打开' }
+  }
+
+  const actions = getCustomActions()
+  const action = actions.find(a => a.name === actionName)
+  if (action) {
+    console.log('[DesktopPet] 播放动作:', actionName)
+    petWindow.webContents.send('desktopPet:playAction', action)
+    return { success: true }
+  }
+  return { success: false, error: '未找到该动作' }
+}
+
 // 恢复宠物状态
 export function restorePetState(mainWindow: BrowserWindow | null): void {
   const config = getPetConfig()
@@ -706,9 +730,13 @@ export function registerDesktopPetIpc(): void {
       const mainWindow = BrowserWindow.getAllWindows().find((w: Electron.BrowserWindow) => !w.webContents.getURL().includes('desktoppet'))
       console.log('[DesktopPet] Found mainWindow:', !!mainWindow)
       showPetWindow(mainWindow || null)
+      // 通知智能感知系统更新窗口引用
+      ipcMain.emit('pet:windowChanged')
       return { success: true, enabled: true }
     } else {
       hidePetWindow()
+      // 通知智能感知系统更新窗口引用
+      ipcMain.emit('pet:windowChanged')
       return { success: true, enabled: false }
     }
   })
