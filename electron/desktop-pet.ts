@@ -10,7 +10,7 @@ let petWindow: BrowserWindow | null = null
 
 // YunYa 基础目录
 function getYunyaDir(): string {
-  const configDir = path.join(app.getPath('userData'), 'openclaw', 'yunya')
+  const configDir = path.join(app.getPath('home'), '.openclaw', 'yunya')
   if (!fs.existsSync(configDir)) {
     fs.mkdirSync(configDir, { recursive: true })
   }
