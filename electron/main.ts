@@ -454,8 +454,13 @@ function ensureSessionsDir(): string {
   return dir
 }
 
+/** 将 sessionKey 中的不安全文件名字符替换为安全字符（Windows 禁止 : 在文件名中使用） */
+function sanitizeSessionFileName(sessionId: string): string {
+  return sessionId.replace(/:/g, '__')
+}
+
 function getSessionFilePath(sessionId: string): string {
-  return path.join(getSessionsDir(), `${sessionId}.json`)
+  return path.join(getSessionsDir(), `${sanitizeSessionFileName(sessionId)}.json`)
 }
 
 function loadSessionIndex(): Array<{ id: string; title: string; model: string; createdAt: number; updatedAt: number }> {
