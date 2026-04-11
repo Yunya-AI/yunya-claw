@@ -36,6 +36,8 @@ export default function ChatPanel({ sessionKey, agentId, agentModel, onAgentMode
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const currentRunIdRef = useRef<string | null>(null)
+  const modelRef = useRef(model)
+  modelRef.current = model
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [pendingMessageAfterReset, setPendingMessageAfterReset] = useState<string | null>(null)
 
@@ -64,6 +66,8 @@ export default function ChatPanel({ sessionKey, agentId, agentModel, onAgentMode
   useEffect(() => {
     if (!window.electronAPI?.gateway?.onChatRefresh) return
     const unsubscribe = window.electronAPI.gateway.onChatRefresh((data) => {
+      // 流式回复期间不覆盖，避免 chatRefresh（agent idle→thinking）覆盖正在进行的流式状态
+      if (streaming) return
       // sessionKey 匹配时刷新消息（未指定 sessionKey 时也刷新）
       if (!data.sessionKey || data.sessionKey === sessionKey) {
         // 重新加载 transcript
@@ -76,7 +80,7 @@ export default function ChatPanel({ sessionKey, agentId, agentModel, onAgentMode
       }
     })
     return unsubscribe
-  }, [sessionKey])
+  }, [sessionKey, streaming])
 
   // 统一初始化：config + session + transcript 并行加载；config 和 session 就绪后立即显示模型，不等待 transcript
   useEffect(() => {
@@ -169,7 +173,7 @@ export default function ChatPanel({ sessionKey, agentId, agentModel, onAgentMode
 
   const saveSession = useCallback(async (msgs: ChatMessage[], modelOverride?: string) => {
     if (!window.electronAPI) return
-    const m = modelOverride ?? model
+    const m = modelOverride ?? modelRef.current
     const title = msgs.find(m0 => m0.role === 'user')?.content.slice(0, 30) || '新会话'
     const session: ChatSession = {
       id: sessionKey,
@@ -181,7 +185,7 @@ export default function ChatPanel({ sessionKey, agentId, agentModel, onAgentMode
     }
     await window.electronAPI.chat.saveSession(session)
     onSessionUpdated(session)
-  }, [sessionKey, model, onSessionUpdated])
+  }, [sessionKey, onSessionUpdated])
 
   const handleModelChange = useCallback(async (newModel: string) => {
     setModel(newModel)
@@ -265,6 +269,7 @@ export default function ChatPanel({ sessionKey, agentId, agentModel, onAgentMode
 
       const decoder = new TextDecoder()
       let accumulated = ''
+      let reasoningAccumulated = ''
       let streamError: string | null = null
 
       while (true) {
@@ -287,15 +292,20 @@ export default function ChatPanel({ sessionKey, agentId, agentModel, onAgentMode
             if (typeof errMsg === 'string' && errMsg.trim()) {
               streamError = streamError ? `${streamError}\n${errMsg}` : errMsg
             }
-            const delta = parsed.choices?.[0]?.delta?.content
-            if (delta) {
-              accumulated += delta
-              const finalContent = accumulated
+            const deltaObj = parsed.choices?.[0]?.delta
+            const contentDelta = deltaObj?.content
+            const reasoningDelta = deltaObj?.reasoning_content
+            if (contentDelta) accumulated += contentDelta
+            if (reasoningDelta) reasoningAccumulated += reasoningDelta
+            if (contentDelta || reasoningDelta) {
+              let finalContent = accumulated
+              if (reasoningAccumulated) {
+                finalContent = '<thinking>' + reasoningAccumulated + '</thinking>\n' + accumulated
+              }
               setMessages(prev => {
                 const last = prev[prev.length - 1]
-                const hasToolContent = last?.content?.includes('<tool_call>') || last?.content?.includes('<tool_result>')
+                const hasToolContent = last?.content?.includes('<tool_call') || last?.content?.includes('<tool_result>')
                 if (hasToolContent) {
-                  // 已有工具内容时不要用纯文本覆盖，否则工具卡片会消失；交由轮询或结束时的 transcript 同步
                   return prev
                 }
                 const updated = [...prev]
@@ -307,9 +317,11 @@ export default function ChatPanel({ sessionKey, agentId, agentModel, onAgentMode
         }
       }
 
-      const finalContent = accumulated || streamError || '\u26a0\ufe0f 请求失败，请重试或使用 /reset 开始新会话。'
+      let finalContent = reasoningAccumulated
+        ? '<thinking>' + reasoningAccumulated + '</thinking>' + (accumulated ? '\n' + accumulated : '')
+        : (accumulated || streamError || '⚠️ 请求失败，请重试或使用 /reset 开始新会话。')
       const finalMessages = [...newMessages, { ...assistantMsg, content: finalContent }]
-      // 优先从 transcript 加载（含工具调用）；给 agent 写入时间，失败时重试一次
+      // 优先从 transcript 加载（含工具调用或纯文本）；给 agent 写入时间，失败时重试一次
       const syncFromTranscript = async () => {
         const tryLoad = async (delayMs: number) => {
           await new Promise(r => setTimeout(r, delayMs))
@@ -317,13 +329,12 @@ export default function ChatPanel({ sessionKey, agentId, agentModel, onAgentMode
           try {
             const res = await window.electronAPI.chat.loadOpenClawTranscript(sessionKey)
             if (res.success && res.messages && res.messages.length > 0) {
-              const hasAnyTools = res.messages.some(m =>
-                m.role === 'assistant' &&
-                (m.content?.includes('<tool_result>') || m.content?.includes('<tool_call>'))
+              // transcript 比 SSE accumulated 更可靠（agent 直接写入，包含工具调用）
+              const transcriptMsgs = res.messages.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp }))
+              const hasNewContent = transcriptMsgs.some(m =>
+                m.role === 'assistant' && m.content && m.content !== ''
               )
-              if (hasAnyTools) {
-                return res.messages.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp }))
-              }
+              if (hasNewContent) return transcriptMsgs
             }
           } catch { /* 忽略 */ }
           return null
